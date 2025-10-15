@@ -1,0 +1,152 @@
+# EKI Settings Configuration File
+# This file configures the Ensemble Kalman Inversion (EKI) parameters for LDM simulation
+
+# 1. EKI time interval  
+EKI_TIME_INTERVAL=15.0
+
+# 2. Time interval unit (options: seconds, minutes, hours)
+EKI_TIME_UNIT=minutes
+
+# 3. Number of receptors
+NUM_RECEPTORS=3
+
+# 4. Receptor locations (latitude, longitude matrix)
+# Format: Each row = latitude longitude (space separated)
+# Strategic locations based on particle distribution analysis
+RECEPTOR_LOCATIONS_MATRIX=
+
+35.6500 129.6000
+35.6000 129.8000
+35.5000 129.9000
+#35.7100 129.5750
+#35.7100 129.6000
+#35.7100 129.6250
+#35.7100 129.6500
+#35.7100 129.6750
+#35.7100 129.7000
+#35.7300 129.5000
+#35.7400 129.5200
+#35.7600 129.5400
+#
+#37.0000 140.5000
+#37.0000 140.700
+#37.0000 140.900
+#
+#37.0000 140.8000
+#36.9500 140.6000
+#37.0500 140.6000
+#36.9500 140.7000
+#37.0500 140.7000
+#36.9500 140.8000
+
+#37.0000 141.0000
+#37.2000 141.6000
+#37.4000 142.2000
+
+# 5. Receptor capture radius (degrees)
+# Particles within this radius from receptor center will be captured
+RECEPTOR_CAPTURE_RADIUS=0.025
+
+# 6. True emission time series (reference simulation) [Bq]
+# For 6 hours with 15-minute intervals = 24 time steps
+# Format: Each row = one time step value
+# Single peak pattern at the END (around 5-6 hours) - harder for EKI!
+TRUE_EMISSION_SERIES=
+1.90387731e+13
+1.90387731e+13
+1.90387731e+12
+1.90387731e+11
+1.90387731e+4
+1.90387731e+3
+1.90387731e+2
+1.90387731e+1
+2.26641204e+13
+2.26641204e+13
+2.26641204e+12
+2.26641204e+11
+2.26641204e+4
+2.26641204e+3
+2.26641204e+2
+2.26641204e+1
+1.51170139e+13
+1.51170139e+13
+1.51170139e+12
+1.51170139e+11
+1.51170139e+4
+1.51170139e+3
+1.51170139e+2
+1.51170139e+1
+
+# 7. Prior emission time series (initial guess for unknown truth) [Bq]
+# Option 1: Constant value mode
+PRIOR_EMISSION_MODE=constant
+PRIOR_EMISSION_CONSTANT=1.0e+12
+
+# Option 2: Time series mode (uncomment to use)
+# PRIOR_EMISSION_MODE=series
+# PRIOR_EMISSION_SERIES=
+# 1.5e+8
+# 1.5e+8
+# 1.5e+8
+# 1.5e+8
+# 1.5e+8
+# 1.5e+8
+# 1.5e+8
+# 1.5e+8
+# 1.5e+8
+# 1.5e+8
+# 1.5e+8
+# 1.5e+8
+# 1.5e+8
+# 1.5e+8
+# 1.5e+8
+# 1.5e+8
+# 1.5e+8
+# 1.5e+8
+# 1.5e+8
+# 1.5e+8
+# 1.5e+8
+# 1.5e+8
+# 1.5e+8
+# 1.5e+8
+# 1.5e+8
+# 1.5e+8
+# 1.5e+8
+# 1.5e+8
+# 1.5e+8
+# 1.5e+8
+# 1.5e+8
+
+# Additional EKI parameters
+EKI_ENSEMBLE_SIZE=100
+EKI_NOISE_LEVEL=0.1
+
+# Python EKI Algorithm Parameters
+EKI_ITERATION=3
+EKI_PERTURB_OPTION=Off
+EKI_ADAPTIVE=Off
+EKI_LOCALIZED=Off
+EKI_REGULARIZATION=Off
+EKI_RENKF_LAMBDA=0.9
+
+# GPU Configuration
+EKI_GPU_FORWARD=On
+EKI_GPU_INVERSE=On
+EKI_NUM_GPU=2
+
+# Simulation Time Parameters
+EKI_TIME_DAYS=0.25
+EKI_INVERSE_TIME_INTERVAL=0.25
+
+# Receptor Parameters
+EKI_RECEPTOR_ERROR=0.0
+EKI_RECEPTOR_MDA=0.0
+
+# Source Parameters
+EKI_SOURCE_LOCATION=Fixed
+EKI_NUM_SOURCE=1
+
+# Memory Doctor Mode (for IPC debugging)
+# When enabled, logs all sent/received data for comparison
+# Helps detect IPC communication issues between LDM and Python EKI
+MEMORY_DOCTOR_MODE=Off

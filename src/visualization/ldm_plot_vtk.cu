@@ -147,16 +147,8 @@ void LDM::outputParticlesBinaryMPI_ens(int timestep){
     // Use 48 threads to leave headroom for system and GPU tasks
     omp_set_num_threads(50);
 
-    static bool first_call = true;
-    if (first_call) {
-        std::cout << Color::CYAN << "[VTK] " << Color::RESET
-                  << "Ensemble output parallelization: " << Color::BOLD
-                  << omp_get_max_threads() << Color::RESET << " threads\n";
-        std::cout << Color::CYAN << "[VTK] " << Color::RESET
-                  << "Selected ensemble for output: " << Color::BOLD
-                  << selected_ensemble_ids[0] << Color::RESET << "\n";
-        first_call = false;
-    }
+    // VTK configuration info is now printed in main_eki.cu before simulation starts
+    // to avoid interfering with progress bar display
 
     // Ensemble mode: use actual particle count from part vector
     // This was set during initializeParticlesEKI_AllEnsembles()

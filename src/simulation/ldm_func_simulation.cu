@@ -5,7 +5,8 @@
 
 #include "../core/ldm.cuh"
 #include "ldm_func_simulation.cuh"
-#include "colors.h"
+#include "../colors.h"
+#include <unistd.h>  // for isatty()
 
 void LDM::runSimulation(){
     
@@ -47,8 +48,6 @@ void LDM::runSimulation(){
     Mesh mesh(start_lat, start_lon, lat_step, lon_step, lat_num, lon_num);
 
     size_t meshSize = mesh.lat_count * mesh.lon_count * sizeof(float);
-
-    std::cout << mesh.lon_count << mesh.lat_count << std::endl;
 
     float* d_dryDep = nullptr;
     float* d_wetDep = nullptr;
@@ -212,8 +211,6 @@ void LDM::runSimulation_eki(){
 
     size_t meshSize = mesh.lat_count * mesh.lon_count * sizeof(float);
 
-    std::cout << mesh.lon_count << mesh.lat_count << std::endl;
-
     float* d_dryDep = nullptr;
     float* d_wetDep = nullptr;
 
@@ -228,7 +225,13 @@ void LDM::runSimulation_eki(){
         std::cerr << "[ERROR] EKI meteorological data not initialized. Call preloadAllEKIMeteorologicalData() first." << std::endl;
         return;
     }
-    std::cout << "EKI simulation starting - using preloaded meteorological data" << std::endl;
+    std::cout << "\nEKI simulation starting - using preloaded meteorological data\n" << std::endl;
+
+    std::cout << Color::BOLD << Color::CYAN
+              << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+              << "  RUNNING SIMULATION\n"
+              << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+              << Color::RESET << std::endl;
 
 #ifdef DEBUG
     // === NaN check 4: Before simulation start ===
@@ -409,13 +412,33 @@ void LDM::runSimulation_eki(){
         }
 
         if(timestep % freq_output==0){
-            printf("-------------------------------------------------\n");
-            printf("[EKI] Time : %f\tsec\n", currentTime);
-            printf("[EKI] Time steps : \t%d of \t%d\n", timestep, (int)(time_end/dt));
-            printf("[EKI] Meteo indices - Past: %d, Future: %d (interpolation ratio t0=%.3f)\n",
+            static bool first_time = true;
+
+            int total_steps = (int)(time_end/dt);
+            float progress = (float)timestep / total_steps * 100.0f;
+            int bar_width = 40;
+            int bar_filled = (int)(progress / 100.0f * bar_width);
+
+            // Terminal: Use ANSI codes for in-place update (goes to both terminal and log via TeeStreambuf)
+            if (!first_time) {
+                fprintf(stderr, "\033[3A");  // Move up 3 lines (only affects terminal, ignored in log file)
+            }
+
+            fprintf(stderr, "\r-------------------------------------------------\033[K\n");
+            fprintf(stderr, "\r[PROGRESS] Time: %8.1f sec │ Step: %4d/%4d [",
+                   currentTime, timestep, total_steps);
+            for (int i = 0; i < bar_width; i++) {
+                if (i < bar_filled) fprintf(stderr, "█");
+                else fprintf(stderr, "░");
+            }
+            fprintf(stderr, "] %.1f%%\033[K\n", progress);
+            fprintf(stderr, "\r[PROGRESS] Meteo: Past=%d Future=%d │ t0=%.3f\033[K\n",
                    past_meteo_index,
                    (future_meteo_index < g_eki_meteo.num_time_steps) ? future_meteo_index : past_meteo_index,
                    t0);
+            fflush(stderr);
+
+            first_time = false;
 
             // Use ensemble output for ensemble mode, regular output for single mode
             // VTK output is DISABLED for performance - only enabled for final EKI iteration via enable_vtk_output flag
@@ -444,6 +467,10 @@ void LDM::runSimulation_eki(){
         // Previous loadFlexGFSData() call removed
 
     }
+
+    // Close the progress bar with a final separator line
+    fprintf(stderr, "\r-------------------------------------------------\033[K\n");
+    fflush(stderr);
 
     std::cout << "EKI simulation completed" << std::endl;
     std::cout << "Elapsed data time: " << totalElapsedTime << " seconds" << std::endl;
@@ -503,8 +530,6 @@ void LDM::runSimulation_eki_dump(){
 
     size_t meshSize = mesh.lat_count * mesh.lon_count * sizeof(float);
 
-    std::cout << mesh.lon_count << mesh.lat_count << std::endl;
-
     float* d_dryDep = nullptr;
     float* d_wetDep = nullptr;
 
@@ -519,7 +544,13 @@ void LDM::runSimulation_eki_dump(){
         std::cerr << "[ERROR] EKI meteorological data not initialized. Call preloadAllEKIMeteorologicalData() first." << std::endl;
         return;
     }
-    std::cout << "EKI simulation starting - using preloaded meteorological data" << std::endl;
+    std::cout << "\nEKI simulation starting - using preloaded meteorological data\n" << std::endl;
+
+    std::cout << Color::BOLD << Color::CYAN
+              << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+              << "  RUNNING SIMULATION\n"
+              << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+              << Color::RESET << std::endl;
 
 #ifdef DEBUG
     // === NaN check 4: Before simulation start ===
@@ -700,13 +731,33 @@ void LDM::runSimulation_eki_dump(){
         }
 
         if(timestep % freq_output==0){
-            printf("-------------------------------------------------\n");
-            printf("[EKI] Time : %f\tsec\n", currentTime);
-            printf("[EKI] Time steps : \t%d of \t%d\n", timestep, (int)(time_end/dt));
-            printf("[EKI] Meteo indices - Past: %d, Future: %d (interpolation ratio t0=%.3f)\n",
+            static bool first_time = true;
+
+            int total_steps = (int)(time_end/dt);
+            float progress = (float)timestep / total_steps * 100.0f;
+            int bar_width = 40;
+            int bar_filled = (int)(progress / 100.0f * bar_width);
+
+            // Terminal: Use ANSI codes for in-place update (goes to both terminal and log via TeeStreambuf)
+            if (!first_time) {
+                fprintf(stderr, "\033[3A");  // Move up 3 lines (only affects terminal, ignored in log file)
+            }
+
+            fprintf(stderr, "\r-------------------------------------------------\033[K\n");
+            fprintf(stderr, "\r[PROGRESS] Time: %8.1f sec │ Step: %4d/%4d [",
+                   currentTime, timestep, total_steps);
+            for (int i = 0; i < bar_width; i++) {
+                if (i < bar_filled) fprintf(stderr, "█");
+                else fprintf(stderr, "░");
+            }
+            fprintf(stderr, "] %.1f%%\033[K\n", progress);
+            fprintf(stderr, "\r[PROGRESS] Meteo: Past=%d Future=%d │ t0=%.3f\033[K\n",
                    past_meteo_index,
                    (future_meteo_index < g_eki_meteo.num_time_steps) ? future_meteo_index : past_meteo_index,
                    t0);
+            fflush(stderr);
+
+            first_time = false;
 
             // Use ensemble output for ensemble mode, regular output for single mode
             // VTK output is DISABLED for performance - only enabled for final EKI iteration via enable_vtk_output flag
@@ -735,6 +786,10 @@ void LDM::runSimulation_eki_dump(){
         // Previous loadFlexGFSData() call removed
 
     }
+
+    // Close the progress bar with a final separator line
+    fprintf(stderr, "\r-------------------------------------------------\033[K\n");
+    fflush(stderr);
 
     std::cout << "EKI simulation completed" << std::endl;
     std::cout << "Elapsed data time: " << totalElapsedTime << " seconds" << std::endl;

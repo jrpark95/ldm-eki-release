@@ -168,7 +168,7 @@ int main(int argc, char** argv) {
     ldm.startTimer();
 
     // Initialize EKI observation system for single mode
-    std::cout << "Initializing observation system for single mode..." << std::endl;
+    std::cout << "\nInitializing observation system for single mode..." << std::endl;
     ldm.initializeEKIObservationSystem();
 
     // Enable VTK output for single mode run
@@ -176,19 +176,19 @@ int main(int argc, char** argv) {
     std::cout << "[VTK] Output enabled for single mode run" << std::endl;
 
     // Run EKI simulation with preloaded meteorological data
-    std::cout << "Running forward simulation..." << std::endl;
+    std::cout << "\nRunning forward simulation..." << std::endl;
     ldm.runSimulation_eki();
 
     ldm.stopTimer();
 
     std::cout << Color::GREEN << "Simulation completed successfully"
-              << Color::RESET << std::endl;
+              << Color::RESET << "\n" << std::endl;
 
     // Save EKI observation results
     ldm.saveEKIObservationResults();
 
     // Write observations to shared memory
-    std::cout << "Writing observations to shared memory..." << std::endl;
+    std::cout << "\nWriting observations to shared memory..." << std::endl;
     
     // Get actual observation data from LDM object
     const std::vector<std::vector<float>>& observations = ldm.getEKIObservations();
@@ -221,7 +221,7 @@ int main(int argc, char** argv) {
     }
 
     std::cout << Color::GREEN << "Observations successfully written to shared memory"
-              << Color::RESET << std::endl;
+              << Color::RESET << "\n" << std::endl;
 
     // Launch Python EKI script in background
     std::cout << "Launching Python EKI script in background..." << std::endl;
@@ -243,7 +243,7 @@ int main(int argc, char** argv) {
     int max_iterations = ldm.getEKIConfig().iteration;
     int current_iteration = 0;
 
-    std::cout << "Maximum iterations configured: " << max_iterations << std::endl;
+    std::cout << "\nMaximum iterations configured: " << max_iterations << std::endl;
 
     LDM_EKI_IPC::EKIReader eki_reader;
     bool continue_iterations = true;
@@ -256,12 +256,16 @@ int main(int argc, char** argv) {
         // ========================================================================
         std::cout << "\n" << Color::BOLD << Color::CYAN
                   << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                  << "  ITERATION " << current_iteration << "/" << max_iterations << "\n"
+                  << "  ITERATION " << current_iteration << "/" << max_iterations;
+
+        // Add FINAL emphasis for last iteration
+        if (current_iteration == max_iterations) {
+            std::cout << " (FINAL - VTK OUTPUT)";
+        }
+
+        std::cout << "\n"
                   << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                   << Color::RESET << std::endl;
-
-        std::cout << Color::BLUE << "[IPC] " << Color::RESET
-                  << "Waiting for ensemble states from Python (timeout: 60s)..." << std::flush;
 
         if (!eki_reader.waitForEnsembleData(60)) {  // 60 second timeout
             if (current_iteration == 1) {
@@ -469,6 +473,11 @@ int main(int argc, char** argv) {
         if (current_iteration == max_iterations) {
             ldm.enable_vtk_output = true;
             std::cout << "[VTK] Output enabled for final iteration " << current_iteration << std::endl;
+            std::cout << Color::CYAN << "[VTK] " << Color::RESET
+                      << "Ensemble output parallelization: " << Color::BOLD << "50" << Color::RESET << " threads\n";
+            std::cout << Color::CYAN << "[VTK] " << Color::RESET
+                      << "Selected ensemble for output: " << Color::BOLD
+                      << ldm.selected_ensemble_ids[0] << Color::RESET << std::endl;
         } else {
             ldm.enable_vtk_output = false;
             std::cout << "[VTK] Output disabled for iteration " << current_iteration << " (performance optimization)" << std::endl;
@@ -542,17 +551,17 @@ int main(int argc, char** argv) {
         ldm.resetEKIObservationSystemForNewIteration();
 
     // Run ensemble simulation
-    std::cout << "[ENSEMBLE] Starting forward simulation..." << std::endl;
+    std::cout << "\n[ENSEMBLE] Starting forward simulation..." << std::endl;
     ldm.startTimer();
     ldm.runSimulation_eki();
     ldm.stopTimer();
 
-    std::cout << Color::GREEN << "[ENSEMBLE] Simulation completed" << Color::RESET << std::endl;
+    std::cout << Color::GREEN << "[ENSEMBLE] Simulation completed" << Color::RESET << "\n" << std::endl;
 
     // ========================================================================
     // Send ensemble observations back to Python
     // ========================================================================
-    std::cout << "\n[ENSEMBLE] Preparing to send observations to Python..." << std::endl;
+    std::cout << "[ENSEMBLE] Preparing to send observations to Python..." << std::endl;
 
     // Format: [num_ensemble × num_receptors × num_timesteps]
     // Python expects: flat array that can be reshaped to (num_ensemble, num_receptors, num_timesteps)

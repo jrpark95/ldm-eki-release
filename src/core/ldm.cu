@@ -152,7 +152,7 @@ void EKIMeteorologicalData::cleanup() {
 GridConfig loadGridConfig() {
     GridConfig config;
 
-    std::string source_file_path = g_config.getString("input_base_path", "./data/input/") + "source.txt";
+    std::string source_file_path = g_config.getString("input_base_path", "./input/") + "source.txt";
     std::ifstream file(source_file_path);
 
     if (!file.is_open()) {

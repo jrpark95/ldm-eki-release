@@ -13,7 +13,7 @@ from matplotlib.gridspec import GridSpec
 import re
 import os
 
-def load_eki_settings(settings_file='data/eki_settings.txt'):
+def load_eki_settings(settings_file='input/eki_settings.txt'):
     """Load EKI settings from configuration file"""
     settings = {
         'time_interval': 15.0,
@@ -70,7 +70,7 @@ def load_eki_settings(settings_file='data/eki_settings.txt'):
             else:
                 # Fallback: try to read from setting.txt
                 try:
-                    with open('data/input/setting.txt', 'r') as f:
+                    with open('input/setting.txt', 'r') as f:
                         for line in f:
                             if 'Time_end' in line:
                                 time_end_seconds = float(line.split(':')[1].strip())
@@ -224,7 +224,7 @@ def load_true_emissions():
     """Load true emission profile"""
     emissions = []
     try:
-        with open('data/eki_settings.txt', 'r') as f:
+        with open('input/eki_settings.txt', 'r') as f:
             in_section = False
             for line in f:
                 if 'TRUE_EMISSION_SERIES=' in line:

@@ -119,9 +119,10 @@ Python EKI가 칼만 이득을 사용해 앙상블 업데이트
 ### 주요 IPC 모듈
 
 **C++ 측:**
-- `src/include/ldm_eki_ipc.cuh`: IPC writer/reader 클래스
+- `src/ipc/ldm_eki_writer.cuh`: IPC writer 클래스
   - `EKIWriter::writeObservations()` - 초기 관측값 기록
   - `EKIWriter::writeEnsembleObservations()` - 앙상블 관측값 기록
+- `src/ipc/ldm_eki_reader.cuh`: IPC reader 클래스
   - `EKIReader::waitForEnsembleData()` - Python 상태 대기
   - `EKIReader::readEnsembleStates()` - 앙상블 상태 읽기
 
@@ -134,19 +135,19 @@ Python EKI가 칼만 이득을 사용해 앙상블 업데이트
 
 ### 설정 시스템
 
-**LDM 설정** (`data/input/setting.txt`):
+**LDM 설정** (`input/setting.txt`):
 - 시뮬레이션 파라미터: time_end, dt, 입자 수
 - 물리 모델: 난류, 침적, 붕괴
 - 파일 경로 및 그리드 차원
 
-**EKI 설정** (`data/eki_settings.txt`):
+**EKI 설정** (`input/eki_settings.txt`):
 - 수용체 위치 및 포착 반경
 - 참값/사전 방출량 시계열
 - EKI 알고리즘 파라미터 (앙상블 크기, 반복 횟수, adaptive/localized 옵션)
 - GPU 설정
 
 **공유 메모리 설정:**
-- 두 프로세스 모두 `data/eki_settings.txt` 읽기
+- 두 프로세스 모두 `input/eki_settings.txt` 읽기
 - C++가 전체 설정을 `/dev/shm/ldm_eki_full_config`에 기록 (128 바이트)
 - Python이 `Model_Connection_np_Ensemble.py::load_config_from_shared_memory()`를 통해 설정 읽기
 
@@ -154,9 +155,9 @@ Python EKI가 칼만 이득을 사용해 앙상블 업데이트
 
 모델은 CRAM (Chebyshev Rational Approximation Method)을 사용한 방사성 붕괴 체인을 지원합니다:
 
-- 핵종 정의: `data/input/nuclides_config_1.txt` (또는 60-핵종 체인용 `nuclides_config_60.txt`)
+- 핵종 정의: `input/nuclides_config_1.txt` (또는 60-핵종 체인용 `nuclides_config_60.txt`)
 - CRAM 행렬: `cram/A60.csv`
-- 붕괴 체인 처리: `src/include/ldm_nuclides.cuh`
+- 붕괴 체인 처리: `src/physics/ldm_nuclides.cuh`
 
 ## EKI 최적화 알고리즘
 
@@ -169,7 +170,7 @@ Python EKI 구현 (`src/eki/Optimizer_EKI_np.py`)은 다음 알고리즘들을 �
 - **EnKF_MDA**: 다중 데이터 동화
 - **REnKF**: 제약조건을 가진 정규화 EnKF
 
-`data/eki_settings.txt`에서 제어:
+`input/eki_settings.txt`에서 제어:
 ```
 EKI_ADAPTIVE=On/Off
 EKI_LOCALIZED=On/Off
@@ -239,13 +240,13 @@ C++와 Python 간 모든 데이터 전송을 `/tmp/eki_debug/`에 로깅하여 �
 ### 새로운 EKI 알고리즘 추가
 
 1. `src/eki/Optimizer_EKI_np.py`의 `Inverse` 클래스에 메서드 추가
-2. `data/eki_settings.txt`에 설정 옵션 추가
+2. `input/eki_settings.txt`에 설정 옵션 추가
 3. `Model_Connection_np_Ensemble.py`의 `load_config_from_shared_memory()` 업데이트
 4. `Optimizer_EKI_np.py::Run()`에 새 메서드 호출 케이스 추가
 
 ### 관측 수집 방식 수정
 
-1. C++ 측: `src/include/ldm_eki_ipc.cuh` 수정
+1. C++ 측: `src/ipc/ldm_eki_writer.cuh` 및 `ldm_eki_reader.cuh` 수정
 2. Python 측: `src/eki/eki_ipc_reader.py` 수정
 3. writer/reader 간 데이터 형식 일치 확인
 4. 필요시 공유 메모리 버퍼 크기 업데이트
@@ -253,23 +254,53 @@ C++와 Python 간 모든 데이터 전송을 `/tmp/eki_debug/`에 로깅하여 �
 ### 물리 모델 추가
 
 1. `src/kernels/ldm_kernels.cuh`에 CUDA 커널 추가
-2. `src/include/ldm_func.cuh`에서 커널 호출하도록 업데이트
-3. `data/input/setting.txt`에 설정 추가
-4. `src/include/ldm_init.cuh`에서 설정 파싱
+2. `src/simulation/ldm_func_simulation.cuh`에서 커널 호출하도록 업데이트
+3. `input/setting.txt`에 설정 추가
+4. `src/init/ldm_init_config.cuh`에서 설정 파싱
 
-## 파일 구조
+## 파일 구조 (모듈화된 구조)
 
 ```
 src/
 ├── main_eki.cu              - EKI 실행파일 진입점
-├── include/                 - CUDA 헤더 파일
-│   ├── ldm.cuh             - 메인 LDM 클래스
-│   ├── ldm_eki_ipc.cuh     - IPC 통신
-│   ├── ldm_func.cuh        - 핵심 시뮬레이션 함수
-│   ├── ldm_init.cuh        - 초기화
-│   └── ldm_nuclides.cuh    - 붕괴 체인 처리
+├── main.cu                  - 표준 시뮬레이션 진입점
+├── main_receptor_debug.cu   - 그리드 수용체 디버그 도구
+├── colors.h                 - 범용 ANSI 색상 정의
+├── core/                    - 핵심 클래스
+│   ├── ldm.cuh             - 메인 LDM 클래스 정의
+│   └── ldm.cu              - LDM 클래스 구현
+├── data/
+│   ├── config/             - 설정 구조체
+│   │   ├── ldm_config.cuh  - 설정 파일 파서
+│   │   └── ldm_struct.cuh  - 데이터 구조체 정의
+│   └── meteo/              - 기상 데이터 관리
+│       ├── ldm_mdata_loading.cuh/cu
+│       ├── ldm_mdata_processing.cuh/cu
+│       └── ldm_mdata_cache.cuh/cu
+├── physics/                 - 물리 모델
+│   ├── ldm_cram2.cuh/cu    - CRAM48 방사성 붕괴
+│   └── ldm_nuclides.cuh/cu - 핵종 체인 관리
 ├── kernels/                 - CUDA 커널
-│   └── ldm_kernels.cuh     - GPU 커널 (이류, 확산 등)
+│   ├── ldm_kernels.cuh     - 커널 메인 헤더
+│   ├── device/             - 디바이스 함수
+│   ├── particle/           - 입자 업데이트 커널
+│   ├── eki/                - EKI 관측 커널
+│   └── dump/               - 그리드 덤프 커널
+├── ipc/                     - 프로세스 간 통신
+│   ├── ldm_eki_writer.cuh/cu
+│   └── ldm_eki_reader.cuh/cu
+├── simulation/              - 시뮬레이션 함수
+│   ├── ldm_func_simulation.cuh/cu
+│   ├── ldm_func_particle.cuh/cu
+│   └── ldm_func_output.cuh/cu
+├── visualization/           - VTK 출력
+│   ├── ldm_plot_vtk.cuh/cu
+│   └── ldm_plot_utils.cuh/cu
+├── init/                    - 초기화
+│   ├── ldm_init_particles.cuh/cu
+│   └── ldm_init_config.cuh/cu
+├── debug/                   - 디버깅 도구
+│   └── memory_doctor.cuh/cu
 └── eki/                     - Python EKI 프레임워크
     ├── RunEstimator.py      - 메인 EKI 실행기
     ├── Optimizer_EKI_np.py  - 칼만 역산 알고리즘
@@ -283,12 +314,11 @@ util/                        - 유틸리티 스크립트
 ├── compare_logs.py          - 로그 비교 도구
 └── diagnose_convergence_issue.py - 수렴 진단 도구
 
-data/
-├── input/
-│   ├── setting.txt          - LDM 시뮬레이션 설정
-│   ├── nuclides_config_*.txt - 핵종 정의
-│   └── gfsdata/             - 기상 데이터 (GFS 형식)
-└── eki_settings.txt         - EKI 알고리즘 설정
+input/                       - 입력 설정 파일 (data/ 폴더 제거됨)
+├── setting.txt              - LDM 시뮬레이션 설정
+├── eki_settings.txt         - EKI 알고리즘 설정
+├── nuclides_config_*.txt    - 핵종 정의
+└── gfsdata/                 - 기상 데이터 (GFS 형식)
 
 output/
 ├── plot_vtk_prior/          - 참값 시뮬레이션 VTK 파일
@@ -421,3 +451,51 @@ nvidia-smi
   - ✅ 실행 파일 정상 생성 (`ldm-eki`, 14MB)
 
 **상세 보고서**: `PARALLEL_REFACTORING_MASTER.md` 참조
+
+### 헤더 파일 구조 정리 (2025-10-15)
+- **중앙 집중식 include 폴더 제거**: 모듈화된 구조로 완전 전환
+  - 기존: 모든 헤더가 `src/include/`에 집중
+  - 변경: 각 모듈 폴더에 헤더와 구현 파일 함께 배치
+  - 삭제된 폴더: `src/include/` (완전 제거)
+
+- **include 경로 업데이트**:
+  - `src/core/ldm.cuh`: 모든 모듈 헤더를 상대 경로로 include
+    ```cpp
+    #include "../data/meteo/ldm_mdata_loading.cuh"
+    #include "../simulation/ldm_func_simulation.cuh"
+    #include "../kernels/ldm_kernels.cuh"
+    ```
+  - 모든 `.cu` 구현 파일: 올바른 상대 경로로 업데이트
+  - `colors.h`: `src/` 루트로 이동 (범용 접근용)
+
+- **Makefile 수정**:
+  - `-I./src/include` 플래그 제거
+  - 모듈 기반 include 경로만 유지
+
+- **최종 구조**:
+  ```
+  src/
+  ├── colors.h              - 범용 색상 정의
+  ├── core/
+  │   ├── ldm.cuh          - 메인 클래스 (모든 모듈 헤더 include)
+  │   └── ldm.cu
+  ├── physics/
+  │   ├── ldm_cram2.cuh
+  │   ├── ldm_cram2.cu
+  │   ├── ldm_nuclides.cuh
+  │   └── ldm_nuclides.cu
+  ├── ipc/
+  │   ├── ldm_eki_writer.cuh
+  │   ├── ldm_eki_writer.cu
+  │   ├── ldm_eki_reader.cuh
+  │   └── ldm_eki_reader.cu
+  ├── simulation/
+  │   ├── ldm_func_simulation.cuh
+  │   └── ldm_func_simulation.cu
+  └── [기타 모듈들...]
+  ```
+
+- **빌드 검증**:
+  - ✅ 모든 include 경로 정상 작동
+  - ✅ 빌드 시간 유지: ~30초-1분
+  - ✅ 병렬 빌드 정상 작동

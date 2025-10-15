@@ -8,7 +8,7 @@
 #include <sstream>
 #include <string>
 #include <cstdint>
-#include "../include/colors.h"
+#include "colors.h"
 
 /**
  * @class MemoryDoctor

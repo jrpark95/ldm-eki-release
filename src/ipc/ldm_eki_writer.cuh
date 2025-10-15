@@ -12,7 +12,7 @@
 #include <cstring>
 #include <iostream>
 #include <string>
-#include "../include/colors.h"
+#include "colors.h"
 
 // Forward declarations
 class MemoryDoctor;

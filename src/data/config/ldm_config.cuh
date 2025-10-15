@@ -14,7 +14,7 @@
  *
  * @example
  *   ConfigReader config;
- *   config.loadConfig("data/input/setting.txt");
+ *   config.loadConfig("input/setting.txt");
  *   float dt = config.getFloat("time_step", 1.0f);
  *
  * @author LDM-EKI Development Team

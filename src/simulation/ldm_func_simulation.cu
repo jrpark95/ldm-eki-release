@@ -3,7 +3,7 @@
  * @brief Simulation module implementation
  */
 
-#include "ldm.cuh"
+#include "../core/ldm.cuh"
 #include "ldm_func_simulation.cuh"
 #include "colors.h"
 

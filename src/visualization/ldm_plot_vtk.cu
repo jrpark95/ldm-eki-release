@@ -4,8 +4,8 @@
  */
 
 #include "../core/ldm.cuh"
-#include "../include/ldm_nuclides.cuh"
-#include "../include/colors.h"
+#include "../physics/ldm_nuclides.cuh"
+#include "colors.h"
 #include <omp.h>
 
 void LDM::outputParticlesBinaryMPI(int timestep){

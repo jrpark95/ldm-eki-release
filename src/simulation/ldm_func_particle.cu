@@ -3,7 +3,7 @@
  * @brief Particle module implementation
  */
 
-#include "ldm.cuh"
+#include "../core/ldm.cuh"
 #include "ldm_func_particle.cuh"
 #include "colors.h"
 

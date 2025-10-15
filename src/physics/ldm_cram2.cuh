@@ -6,7 +6,7 @@
 #include <cuda_runtime.h>
 #include <vector>
 #include <string>
-#include "../include/colors.h"
+#include "colors.h"
 
 #ifndef N_NUCLIDES
 #define N_NUCLIDES 60

@@ -3,7 +3,7 @@ NVCC = /usr/local/cuda/bin/nvcc
 # - Removed -DCRAM_DEBUG (CRAM not used)
 # - Using -O2 instead of -O3 (faster compilation, minimal runtime difference)
 # - Parallel build enabled (use: make -j4)
-NVCCFLAGS = -w -O2 -arch=sm_61 -I./src -I./src/include -I./src/kernels -I./src/kernels/cram -I./src/data/config
+NVCCFLAGS = -w -O2 -arch=sm_61 -I./src -I./src/kernels -I./src/kernels/cram -I./src/data/config
 
 # Enable parallel builds
 MAKEFLAGS += -j$(shell nproc)

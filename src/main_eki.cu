@@ -1,6 +1,7 @@
 #include "core/ldm.cuh"
-#include "ldm_nuclides.cuh"
-#include "ldm_eki_ipc.cuh"
+#include "physics/ldm_nuclides.cuh"
+#include "ipc/ldm_eki_reader.cuh"
+#include "ipc/ldm_eki_writer.cuh"
 #include "debug/memory_doctor.cuh"
 #include "colors.h"
 
@@ -95,7 +96,7 @@ int main(int argc, char** argv) {
 
     // Load nuclide configuration
     NuclideConfig* nucConfig = NuclideConfig::getInstance();
-    std::string nuclide_config_file = "./data/input/nuclides_config_1.txt";
+    std::string nuclide_config_file = "./input/nuclides_config_1.txt";
 
     if (!nucConfig->loadFromFile(nuclide_config_file)) {
         std::cerr << Color::RED << "[ERROR] Failed to load nuclide configuration"
@@ -111,7 +112,7 @@ int main(int argc, char** argv) {
     ldm.loadSimulationConfiguration();
 
     // Load EKI settings
-    std::cout << "Loading configuration from " << Color::BOLD << "data/eki_settings.txt" << Color::RESET << "..." << std::flush;
+    std::cout << "Loading configuration from " << Color::BOLD << "input/eki_settings.txt" << Color::RESET << "..." << std::flush;
     ldm.loadEKISettings();
     std::cout << Color::GREEN << " ✓\n" << Color::RESET;
 

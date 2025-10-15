@@ -46,7 +46,7 @@ struct NuclideInfo {
  * @usage
  * @code
  *   auto* config = NuclideConfig::getInstance();
- *   config->loadFromFile("data/input/nuclides_config_1.txt");
+ *   config->loadFromFile("input/nuclides_config_1.txt");
  *   float lambda = config->getDecayConstant(0);
  * @endcode
  */

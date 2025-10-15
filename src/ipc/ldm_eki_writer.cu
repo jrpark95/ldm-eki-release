@@ -1,6 +1,6 @@
 // ldm_eki_writer.cu - Implementation of EKI IPC Writer
 #include "ldm_eki_writer.cuh"
-#include "../include/ldm.cuh"  // For EKIConfig definition
+#include "../core/ldm.cuh"  // For EKIConfig definition
 #include "../debug/memory_doctor.cuh"
 #include <errno.h>
 

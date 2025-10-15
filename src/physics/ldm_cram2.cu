@@ -1,6 +1,6 @@
 // ldm_cram2.cu - CRAM48 Implementation
 #include "ldm_cram2.cuh"
-#include "../include/ldm.cuh"
+#include "../core/ldm.cuh"
 #include <fstream>
 #include <sstream>
 #include <cmath>

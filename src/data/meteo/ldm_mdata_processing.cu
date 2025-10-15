@@ -3,7 +3,7 @@
  * @brief Meteorological data processing implementation
  */
 
-#include "ldm.cuh"
+#include "../../core/ldm.cuh"
 #include "ldm_mdata_processing.cuh"
 #include "colors.h"
 

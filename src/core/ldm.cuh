@@ -597,15 +597,21 @@ GridConfig loadGridConfig();
 
 
 // Note: ldm_cram2.cuh moved to early include section (after ldm_config.cuh) to provide N_NUCLIDES macro
-#include "ldm_kernels.cuh"
+#include "../kernels/ldm_kernels.cuh"
 
 // Refactored initialization modules
 #include "../init/ldm_init_particles.cuh"
 #include "../init/ldm_init_config.cuh"
 
-#include "ldm_mdata.cuh"
-// #include "ldm_socket.cuh"
-#include "ldm_func.cuh"
+// Refactored meteorological data modules
+#include "../data/meteo/ldm_mdata_loading.cuh"
+#include "../data/meteo/ldm_mdata_processing.cuh"
+#include "../data/meteo/ldm_mdata_cache.cuh"
+
+// Refactored simulation modules
+#include "../simulation/ldm_func_simulation.cuh"
+#include "../simulation/ldm_func_particle.cuh"
+#include "../simulation/ldm_func_output.cuh"
 
 // Refactored visualization modules
 #include "../visualization/ldm_plot_vtk.cuh"

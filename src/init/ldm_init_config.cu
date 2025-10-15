@@ -4,12 +4,12 @@
  */
 
 #include "../core/ldm.cuh"
-#include "../include/ldm_nuclides.cuh"
-#include "../include/colors.h"
+#include "../physics/ldm_nuclides.cuh"
+#include "colors.h"
 
 void LDM::loadSimulationConfiguration(){
 
-    if (!g_config.loadConfig("data/input/setting.txt")) {
+    if (!g_config.loadConfig("input/setting.txt")) {
         std::cerr << "Failed to load configuration file" << std::endl;
         exit(1);
     }
@@ -66,7 +66,7 @@ void LDM::loadSimulationConfiguration(){
         std::cerr << "Warning: CRAM system initialization failed, using traditional decay" << std::endl;
     }
 
-    std::string source_file_path = g_config.getString("input_base_path", "./data/input/") + "source.txt";
+    std::string source_file_path = g_config.getString("input_base_path", "./input/") + "source.txt";
     sourceFile = fopen(source_file_path.c_str(), "r");
 
     if (!sourceFile){
@@ -166,9 +166,9 @@ void LDM::loadEKISettings() {
     std::cout << Color::CYAN << "[SYSTEM] " << Color::RESET
               << "Loading EKI settings... " << std::flush;
     
-    FILE* ekiFile = fopen("data/eki_settings.txt", "r");
+    FILE* ekiFile = fopen("input/eki_settings.txt", "r");
     if (!ekiFile) {
-        std::cerr << "Failed to open data/eki_settings.txt" << std::endl;
+        std::cerr << "Failed to open input/eki_settings.txt" << std::endl;
         exit(1);
     }
     

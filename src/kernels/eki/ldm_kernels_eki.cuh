@@ -8,7 +8,7 @@
  */
 
 #pragma once
-#include "../../include/ldm.cuh"  // For LDM::LDMpart and constants
+#include "../../core/ldm.cuh"  // For LDM::LDMpart and constants
 
 // ============================================================================
 // EKI OBSERVATION KERNELS

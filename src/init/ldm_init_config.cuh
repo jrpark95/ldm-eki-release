@@ -16,7 +16,7 @@
  * @method LDM::loadSimulationConfiguration
  * @brief Load simulation parameters from configuration files
  *
- * @details Loads settings from data/input/setting.txt and source.txt including:
+ * @details Loads settings from input/setting.txt and source.txt including:
  *          - Time parameters (time_end, dt, output frequency)
  *          - Particle count and physical properties
  *          - Physics model switches (turbulence, deposition, decay)
@@ -24,8 +24,8 @@
  *          - Species properties (decay constants, sizes, densities)
  *
  * @pre Configuration files must exist:
- *      - data/input/setting.txt (simulation parameters)
- *      - data/input/source.txt (source locations and emissions)
+ *      - input/setting.txt (simulation parameters)
+ *      - input/source.txt (source locations and emissions)
  *      - cram/A60.csv (CRAM decay matrix, if radioactive decay enabled)
  *
  * @post Global configuration loaded into member variables
@@ -76,14 +76,14 @@ void cleanOutputDirectory();
  * @method LDM::loadEKISettings
  * @brief Load EKI-specific configuration from eki_settings.txt
  *
- * @details Parses data/eki_settings.txt to configure Ensemble Kalman Inversion:
+ * @details Parses input/eki_settings.txt to configure Ensemble Kalman Inversion:
  *          - Receptor locations (lat/lon pairs)
  *          - True emission time series (for generating observations)
  *          - Prior emission time series (initial guess)
  *          - EKI algorithm parameters (ensemble size, iterations)
  *          - GPU acceleration settings
  *
- * @pre data/eki_settings.txt must exist
+ * @pre input/eki_settings.txt must exist
  * @pre EKI mode must be enabled (g_eki.mode = true)
  *
  * @post g_eki struct populated with all EKI parameters

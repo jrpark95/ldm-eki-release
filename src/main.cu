@@ -1,5 +1,5 @@
 #include "core/ldm.cuh"
-#include "ldm_nuclides.cuh"
+#include "physics/ldm_nuclides.cuh"
 //#include "ldm_cram.cuh"
 //#include "cram_runtime.h"
 
@@ -30,7 +30,7 @@ int main(int argc, char** argv) {
 
     // Load nuclide configuration (daughter stress test)
     NuclideConfig* nucConfig = NuclideConfig::getInstance();
-    std::string nuclide_config_file = "./data/input/nuclides_config_1.txt";
+    std::string nuclide_config_file = "./input/nuclides_config_1.txt";
     
     if (!nucConfig->loadFromFile(nuclide_config_file)) {
         std::cerr << "[ERROR] Failed to load nuclide configuration" << std::endl;

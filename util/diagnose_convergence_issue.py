@@ -104,7 +104,7 @@ print("COMPARISON WITH TRUE EMISSIONS")
 print("="*70)
 
 try:
-    with open('data/eki_settings.txt', 'r') as f:
+    with open('input/eki_settings.txt', 'r') as f:
         true_emissions = []
         in_section = False
         for line in f:

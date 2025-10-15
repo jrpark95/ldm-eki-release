@@ -1,6 +1,7 @@
-#include "ldm.cuh"
+#include "core/ldm.cuh"
 #include "ldm_nuclides.cuh"
 #include "ldm_eki_ipc.cuh"
+#include "debug/memory_doctor.cuh"
 #include "colors.h"
 
 // Standard library includes

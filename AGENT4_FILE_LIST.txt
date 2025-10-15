@@ -1,0 +1,54 @@
+# Agent 4 - IPC/Utility Modules Refactoring
+# File List for Agent 6 Integration
+
+## New Files Created (10 total)
+
+### IPC Module (4 files)
+src/ipc/ldm_eki_writer.cuh    # EKIWriter class header (272 lines)
+src/ipc/ldm_eki_writer.cu     # EKIWriter implementation (342 lines)
+src/ipc/ldm_eki_reader.cuh    # EKIReader class header (156 lines)
+src/ipc/ldm_eki_reader.cu     # EKIReader implementation (182 lines)
+
+### Debug Module (2 files)
+src/debug/memory_doctor.cuh   # MemoryDoctor class header (115 lines)
+src/debug/memory_doctor.cu    # MemoryDoctor implementation (245 lines)
+
+### Physics Module (4 files)
+src/physics/ldm_cram2.cuh     # CRAM48 declarations (146 lines)
+src/physics/ldm_cram2.cu      # CRAM48 implementation (260 lines)
+src/physics/ldm_nuclides.cuh  # NuclideConfig declarations (143 lines)
+src/physics/ldm_nuclides.cu   # NuclideConfig implementation (160 lines)
+
+## Original Files (can be removed after integration)
+src/include/ldm_eki_ipc.cuh   # Replaced by ipc/ modules
+src/include/memory_doctor.cuh # Replaced by debug/ module
+src/include/ldm_cram2.cuh     # Replaced by physics/ module
+src/include/ldm_nuclides.cuh  # Replaced by physics/ module
+
+## Documentation
+AGENT4_COMPLETION_REPORT.md   # Detailed completion report
+AGENT4_FILE_LIST.txt          # This file
+
+## Namespace Changes
+- EKIWriter: now in LDM_EKI_IPC namespace
+- EKIReader: now in LDM_EKI_IPC namespace
+- MemoryDoctor: global class (no namespace)
+- NuclideConfig: global class (no namespace)
+- CRAM functions: LDM class member functions
+
+## Key Dependencies
+- ldm_eki_writer.cuh requires: colors.h, ldm_struct.cuh
+- ldm_eki_reader.cuh requires: colors.h
+- memory_doctor.cuh requires: colors.h
+- ldm_cram2.cuh requires: colors.h, ldm.cuh
+- ldm_nuclides.cuh requires: (standard headers only)
+
+## Critical: IPC Compatibility
+All shared memory structures preserved:
+- EKIConfigBasic: 12 bytes
+- EKIConfigFull: 128 bytes
+- EKIDataHeader: 12 bytes + data
+- EnsembleConfig: 12 bytes
+- EnsembleDataHeader: 12 bytes + data
+
+Row-major data ordering maintained for Python compatibility.

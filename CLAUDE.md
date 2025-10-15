@@ -399,3 +399,25 @@ nvidia-smi
 - **시각화 시간 축 정렬**:
   - 입자 수 그래프에서 Single Mode와 Ensemble Mean의 시간 축 통일
   - 불필요한 time shift 제거로 데이터 비교 명확화
+
+### 병렬 리팩토링 및 모듈화 (2025-10-15)
+- **6개 에이전트 병렬 작업**: 코드베이스를 6개 영역으로 분할하여 동시 리팩토링
+  - Agent 1: 시뮬레이션 함수 (`ldm_func.cuh` → `src/simulation/`)
+  - Agent 2: 기상 데이터 관리 (`ldm_mdata.cuh` → `src/data/meteo/`)
+  - Agent 3: 입자 초기화 (`ldm_init.cuh` → `src/init/`)
+  - Agent 4: VTK 시각화 (`ldm_plot.cuh` → `src/visualization/`)
+  - Agent 5: IPC 통신 (`ldm_eki_ipc.cuh` → `src/ipc/`)
+  - Agent 6: 물리 모델 및 커널 (`ldm_cram2.cuh`, nuclides → `src/physics/`, `src/kernels/`)
+
+- **통합 작업 완료**:
+  - 전역 변수 multiple definition 에러 수정 (`src/core/ldm.cuh`, `ldm.cu`)
+  - LDM 생성자/소멸자 구현 추가
+  - Deprecation 경고 메시지 제거 (릴리즈 빌드용)
+  - 23개 이상의 모듈화된 파일로 재구성
+
+- **빌드 시스템 개선**:
+  - ✅ 모든 컴파일 및 링크 에러 해결
+  - ✅ 깨끗한 빌드 (경고 없음)
+  - ✅ 실행 파일 정상 생성 (`ldm-eki`, 14MB)
+
+**상세 보고서**: `PARALLEL_REFACTORING_MASTER.md` 참조

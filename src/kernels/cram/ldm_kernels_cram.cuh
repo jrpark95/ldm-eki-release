@@ -1,3 +1,21 @@
+/**
+ * @file ldm_kernels_cram.cuh
+ * @brief CRAM (Chebyshev Rational Approximation Method) CUDA kernels
+ *
+ * @details Device functions for applying CRAM matrix transformations to
+ *          nuclide concentration vectors. CRAM is used for accurate and
+ *          efficient solution of radioactive decay chains.
+ *
+ * @note Optimized for 60-nuclide decay chains
+ * @note Uses row-major matrix layout for GPU memory coalescing
+ *
+ * @see ldm_cram2.cuh for CRAM matrix loading
+ * @see ldm_nuclides.cuh for nuclide definitions
+ *
+ * @author LDM-EKI Development Team
+ * @date 2025-01-15
+ */
+
 #pragma once
 #ifndef N_NUCLIDES
 #define N_NUCLIDES 60

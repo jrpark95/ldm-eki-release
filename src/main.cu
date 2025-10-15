@@ -1,4 +1,4 @@
-#include "ldm.cuh"
+#include "core/ldm.cuh"
 #include "ldm_nuclides.cuh"
 //#include "ldm_cram.cuh"
 //#include "cram_runtime.h"

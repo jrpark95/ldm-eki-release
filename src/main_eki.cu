@@ -607,7 +607,7 @@ int main(int argc, char** argv) {
               << " × " << num_timesteps << "]" << Color::RESET
               << " (" << total_obs_elements << " values)" << std::endl;
 
-    std::cout << "\n" << Color::BOLD << Color::GREEN << "✓ Iteration " << current_iteration
+    std::cout << "\n" << Color::BOLD << Color::YELLOW << "✓ Iteration " << current_iteration
               << "/" << max_iterations << " completed" << Color::RESET << "\n" << std::endl;
 
     } // End of iteration loop
@@ -641,7 +641,7 @@ int main(int argc, char** argv) {
     std::cerr.rdbuf(cerrbuf);
     logFile.close();
 
-    std::cout << "\n" << Color::GREEN << Color::BOLD << "✓ Simulation completed" << Color::RESET << std::endl;
+    std::cout << "\n" << Color::YELLOW << Color::BOLD << "✓ Simulation completed" << Color::RESET << std::endl;
     std::cout << "  Logs: " << Color::BOLD << "logs/ldm_eki_simulation.log" << Color::RESET << std::endl;
 
     // ========================================================================

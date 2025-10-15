@@ -292,29 +292,29 @@ bool LDM::loadSingleMeteoFile(int file_index, FlexPres*& pres_data, FlexUnis*& u
 bool LDM::preloadAllEKIMeteorologicalData() {
     std::cout << Color::CYAN << Color::BOLD << "\n[METEO] " << Color::RESET
               << "Starting meteorological data preloading for EKI\n";
-    
+
     // Clean up existing data
     g_eki_meteo.cleanup();
-    
+
     // Calculate required number of files
     int num_files = calculateRequiredMeteoFiles();
     if (num_files <= 0) {
         std::cerr << "[ERROR] Invalid file count: " << num_files << std::endl;
         return false;
     }
-    
+
     // Set metadata
     g_eki_meteo.num_time_steps = num_files;
     g_eki_meteo.pres_data_size = (dimX_GFS + 1) * dimY_GFS * dimZ_GFS * sizeof(FlexPres);
     g_eki_meteo.unis_data_size = (dimX_GFS + 1) * dimY_GFS * sizeof(FlexUnis);
     g_eki_meteo.hgt_data_size = dimZ_GFS * sizeof(float);
-    
+
     // Initialize host memory vectors
     g_eki_meteo.host_flex_pres_data.resize(num_files);
     g_eki_meteo.host_flex_unis_data.resize(num_files);
     g_eki_meteo.host_flex_hgt_data.resize(num_files);
-    
-    std::cout << Color::CYAN << "[METEO] " << Color::RESET
+
+    std::cout << "\n" << Color::CYAN << "[METEO] " << Color::RESET
               << "Parallel CPU loading: " << Color::BOLD << num_files << Color::RESET << " files\n";
     auto start_time = std::chrono::high_resolution_clock::now();
     
@@ -374,13 +374,12 @@ bool LDM::preloadAllEKIMeteorologicalData() {
         return false;
     }
 
-    std::cout << Color::GREEN << "✓ " << Color::RESET
-              << "CPU loading completed: " << Color::BOLD << num_files << Color::RESET
+    std::cout << "CPU loading completed: " << Color::BOLD << num_files << Color::RESET
               << " files (" << duration.count() << "ms)\n";
-    
+
     // GPU memory allocation and copying
-    std::cout << Color::CYAN << "[METEO] " << Color::RESET
-              << "Starting GPU memory allocation and data transfer\n";
+    std::cout << "\n" << Color::CYAN << "[METEO] " << Color::RESET
+              << "Transferring to GPU memory\n";
     auto gpu_start_time = std::chrono::high_resolution_clock::now();
     
     // Allocate GPU memory pointer arrays
@@ -442,9 +441,9 @@ bool LDM::preloadAllEKIMeteorologicalData() {
             break;
         }
         
-        std::cout << "GPU data transfer completed: file " << i << std::endl;
+        // Silent progress - individual file transfers not reported
     }
-    
+
     if (!gpu_allocation_success) {
         // Clean up partially allocated memory
         for (int i = 0; i < num_files; i++) {
@@ -455,27 +454,24 @@ bool LDM::preloadAllEKIMeteorologicalData() {
         g_eki_meteo.cleanup();
         return false;
     }
-    
+
     // Copy pointer arrays to GPU
-    err1 = cudaMemcpy(g_eki_meteo.device_flex_pres_data, temp_pres_ptrs.data(), 
+    err1 = cudaMemcpy(g_eki_meteo.device_flex_pres_data, temp_pres_ptrs.data(),
                       num_files * sizeof(FlexPres*), cudaMemcpyHostToDevice);
-    err2 = cudaMemcpy(g_eki_meteo.device_flex_unis_data, temp_unis_ptrs.data(), 
+    err2 = cudaMemcpy(g_eki_meteo.device_flex_unis_data, temp_unis_ptrs.data(),
                       num_files * sizeof(FlexUnis*), cudaMemcpyHostToDevice);
-    err3 = cudaMemcpy(g_eki_meteo.device_flex_hgt_data, temp_hgt_ptrs.data(), 
+    err3 = cudaMemcpy(g_eki_meteo.device_flex_hgt_data, temp_hgt_ptrs.data(),
                       num_files * sizeof(float*), cudaMemcpyHostToDevice);
-    
+
     if (err1 != cudaSuccess || err2 != cudaSuccess || err3 != cudaSuccess) {
         std::cerr << Color::RED << Color::BOLD << "[ERROR] " << Color::RESET
                   << "Failed to copy GPU pointer array\n";
         g_eki_meteo.cleanup();
         return false;
     }
-    
+
     auto gpu_end_time = std::chrono::high_resolution_clock::now();
     auto gpu_duration = std::chrono::duration_cast<std::chrono::milliseconds>(gpu_end_time - gpu_start_time);
-    
-    // Allocate existing LDM GPU memory slots in EKI mode (device_meteorological_flex_pres0/1, unis0/1)
-    std::cout << "Allocating existing LDM GPU memory slots..." << std::endl;
     
     // Slot 0 (for past data)
     cudaError_t err_alloc1 = cudaMalloc((void**)&g_eki_meteo.ldm_pres0_slot, g_eki_meteo.pres_data_size);
@@ -528,16 +524,14 @@ bool LDM::preloadAllEKIMeteorologicalData() {
     }
     
     g_eki_meteo.is_initialized = true;
-    
-    std::cout << Color::GREEN << "✓ " << Color::RESET
-              << "GPU transfer completed (" << gpu_duration.count() << "ms)\n";
-    std::cout << Color::GREEN << Color::BOLD << "✓ " << Color::RESET
-              << "Total preloading completed (" << (duration.count() + gpu_duration.count()) << "ms)\n";
+
+    std::cout << "GPU transfer completed (" << gpu_duration.count() << "ms)\n";
+    std::cout << "\nMetorological data preloading completed (" << (duration.count() + gpu_duration.count()) << "ms)\n";
     std::cout << "  Memory usage:\n";
     std::cout << "    Pres data   : " << Color::BOLD << (g_eki_meteo.pres_data_size * num_files / 1024 / 1024) << " MB" << Color::RESET << "\n";
     std::cout << "    Unis data   : " << Color::BOLD << (g_eki_meteo.unis_data_size * num_files / 1024 / 1024) << " MB" << Color::RESET << "\n";
     std::cout << "    Height data : " << Color::BOLD << (g_eki_meteo.hgt_data_size * num_files / 1024) << " KB" << Color::RESET << "\n";
-    
+
     return true;
 }
 

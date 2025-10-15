@@ -353,3 +353,23 @@ nvidia-smi
 - `compare_all_receptors.py`: 출력 디렉토리 자동 생성
 - 시뮬레이션 종료 후 자동 시각화 생성
 - 다중 수용체 지원 (페이지네이션)
+
+### 코드 국제화 (2025-01-15)
+- **전체 출력 메시지 영어 변환**: 릴리즈 준비를 위한 국제화 작업
+  - 모든 한국어 출력 메시지를 영어로 번역
+  - 대상 파일:
+    - `src/main_eki.cu` - 메인 진입점
+    - `src/include/ldm_eki_ipc.cuh` - IPC 통신
+    - `src/include/ldm_func.cuh` - 시뮬레이션 함수
+    - `src/include/ldm_init.cuh` - 입자 초기화
+    - `src/include/ldm_mdata.cuh` - 기상자료 로딩
+  - 로그 태그 정리: 불필요한 태그 제거 ([INIT], [EKI], [LOG] 등)
+  - 필수 태그만 유지: [ERROR], [ENSEMBLE], [VTK], [VISUALIZATION], [DEBUG*]
+
+- **색상 코딩 시스템 도입**:
+  - `src/include/colors.h` 추가: ANSI 색상 코드 정의
+  - 에러 메시지: 빨간색
+  - 성공 메시지: 녹색
+  - 경고 메시지: 노란색
+  - 헤더: 청록색 + 굵게
+  - 안전한 구현: ANSI 미지원 터미널에서도 정상 작동

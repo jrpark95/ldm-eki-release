@@ -162,13 +162,13 @@ struct EKIMeteorologicalData {
     
     void cleanup() {
         if (!is_initialized) {
-            std::cout << "[EKI_METEO] 이미 정리된 상태입니다." << std::endl;
+            std::cout << "Meteorological data already cleaned up" << std::endl;
             return;
         }
-        
+
         try {
-            // Host 메모리 정리
-            std::cout << "[EKI_METEO] Host 메모리 정리 중..." << std::endl;
+            // Clean up host memory
+            std::cout << "Cleaning up host meteorological data..." << std::endl;
             for (size_t i = 0; i < host_flex_pres_data.size(); i++) {
                 if (host_flex_pres_data[i] != nullptr) {
                     delete[] host_flex_pres_data[i];
@@ -184,13 +184,13 @@ struct EKIMeteorologicalData {
             host_flex_pres_data.clear();
             host_flex_unis_data.clear();
             host_flex_hgt_data.clear();
-            
-            // GPU 메모리 정리 - 순서 중요!
-            std::cout << "[EKI_METEO] GPU 메모리 정리 중..." << std::endl;
-            
-            // 먼저 개별 GPU 메모리 블록들 해제
+
+            // Clean up GPU memory (order is important!)
+            std::cout << "Cleaning up GPU meteorological data..." << std::endl;
+
+            // First release individual GPU memory blocks
             if (device_flex_pres_data && num_time_steps > 0) {
-                // GPU에서 포인터 배열 가져오기
+                // Get pointer array from GPU
                 std::vector<FlexPres*> temp_pres_ptrs(num_time_steps);
                 cudaError_t err = cudaMemcpy(temp_pres_ptrs.data(), device_flex_pres_data, 
                                            num_time_steps * sizeof(FlexPres*), cudaMemcpyDeviceToHost);
@@ -234,16 +234,16 @@ struct EKIMeteorologicalData {
                 cudaFree(device_flex_hgt_data);
                 device_flex_hgt_data = nullptr;
             }
-            
-            // 메타데이터 초기화
+
+            // Reset metadata
             num_time_steps = 0;
             pres_data_size = 0;
             unis_data_size = 0;
             hgt_data_size = 0;
             is_initialized = false;
-            
-            // 기존 LDM GPU 메모리 슬롯 정리
-            std::cout << "[EKI_METEO] 기존 LDM GPU 메모리 슬롯 정리 중..." << std::endl;
+
+            // Clean up existing LDM GPU memory slots
+            std::cout << "Cleaning up LDM GPU memory slots..." << std::endl;
             if (ldm_pres0_slot) {
                 cudaFree(ldm_pres0_slot);
                 ldm_pres0_slot = nullptr;
@@ -260,14 +260,14 @@ struct EKIMeteorologicalData {
                 cudaFree(ldm_unis1_slot);
                 ldm_unis1_slot = nullptr;
             }
-            
-            std::cout << "[EKI_METEO] 메모리 정리 완료" << std::endl;
-            
+
+            std::cout << "Meteorological data cleanup completed" << std::endl;
+
         } catch (const std::exception& e) {
-            std::cerr << "[ERROR] 메모리 정리 중 예외 발생: " << e.what() << std::endl;
+            std::cerr << "[ERROR] Exception during memory cleanup: " << e.what() << std::endl;
             is_initialized = false;
         } catch (...) {
-            std::cerr << "[ERROR] 메모리 정리 중 알 수 없는 예외 발생" << std::endl;
+            std::cerr << "[ERROR] Unknown exception during memory cleanup" << std::endl;
             is_initialized = false;
         }
     }

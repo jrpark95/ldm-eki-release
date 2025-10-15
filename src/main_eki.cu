@@ -1,9 +1,7 @@
 #include "ldm.cuh"
 #include "ldm_nuclides.cuh"
 #include "ldm_eki_ipc.cuh"
-//#include "ldm_cram.cuh"
-//#include "cram_runtime.h"
-
+#include "colors.h"
 
 // Standard library includes
 #include <iostream>
@@ -30,8 +28,10 @@ int main(int argc, char** argv) {
     // Single process mode (MPI removed)
 
     // Clean logs directory and redirect output
-    std::cout << "=== LDM-EKI: Source Term Inversion with Ensemble Kalman Methods ===" << std::endl;
-    std::cout << "[LOG] Cleaning previous simulation data..." << std::endl;
+    std::cout << Color::BOLD << Color::CYAN
+              << "=== LDM-EKI: Source Term Inversion with Ensemble Kalman Methods ==="
+              << Color::RESET << std::endl;
+    std::cout << "Cleaning previous simulation data..." << std::endl;
 
     // Create necessary directories
     system("mkdir -p logs");
@@ -41,23 +41,24 @@ int main(int argc, char** argv) {
     system("mkdir -p logs/eki_iterations");
 
     // Use centralized cleanup script for data cleanup
-    std::cout << "[LOG] Running cleanup script (util/cleanup.py)..." << std::endl;
+    std::cout << "Running cleanup script (util/cleanup.py)..." << std::endl;
     int cleanup_ret = system("python3 util/cleanup.py");
 
     if (cleanup_ret == 0) {
-        std::cout << "[LOG] ✅ Cleanup completed successfully" << std::endl;
+        std::cout << Color::GREEN << "Cleanup completed successfully" << Color::RESET << std::endl;
     } else {
-        std::cout << "[LOG] ⚠️  Cleanup script returned code " << cleanup_ret << std::endl;
+        std::cout << Color::YELLOW << "Cleanup script returned code " << cleanup_ret << Color::RESET << std::endl;
         // If user declined cleanup (exit code 0 from aborted script), continue anyway
         if (cleanup_ret != 0) {
-            std::cout << "[LOG] Continuing without cleanup..." << std::endl;
+            std::cout << "Continuing without cleanup..." << std::endl;
         }
     }
     
     // Open log file for output redirection
     std::ofstream logFile("logs/ldm_eki_simulation.log");
     if (!logFile.is_open()) {
-        std::cerr << "[ERROR] Could not open log file logs/ldm_eki_simulation.log" << std::endl;
+        std::cerr << Color::RED << "[ERROR] Could not open log file logs/ldm_eki_simulation.log"
+                  << Color::RESET << std::endl;
         return 1;
     }
     
@@ -89,63 +90,58 @@ int main(int argc, char** argv) {
     
     std::cout.rdbuf(&tee_cout);
     std::cerr.rdbuf(&tee_cerr);
-    
-    std::cout << "[LOG] Log redirection active - output goes to console and logs/ldm_eki_simulation.log" << std::endl;
 
-    // Load nuclide configuration (daughter stress test)
+    std::cout << "Log redirection active - output goes to console and logs/ldm_eki_simulation.log" << std::endl;
+
+    // Load nuclide configuration
     NuclideConfig* nucConfig = NuclideConfig::getInstance();
     std::string nuclide_config_file = "./data/input/nuclides_config_1.txt";
-    
+
     if (!nucConfig->loadFromFile(nuclide_config_file)) {
-        std::cerr << "[ERROR] Failed to load nuclide configuration" << std::endl;
+        std::cerr << Color::RED << "[ERROR] Failed to load nuclide configuration"
+                  << Color::RESET << std::endl;
         return 1;
     }
-    
+
     // Update global nuclide count
     g_num_nuclides = nucConfig->getNumNuclides();
-    
+
     LDM ldm;
 
     ldm.loadSimulationConfiguration();
 
-    // Load EKI settings (always load for EKI executable)
-    std::cout << "[EKI] Loading Ensemble Kalman Inversion settings..." << std::endl;
+    // Load EKI settings
+    std::cout << "Loading Ensemble Kalman Inversion settings..." << std::endl;
     ldm.loadEKISettings();
 
     // Initialize Memory Doctor if enabled in settings
     extern MemoryDoctor g_memory_doctor;
     g_memory_doctor.setEnabled(ldm.getEKIConfig().memory_doctor_mode);
 
-    // Initialize CRAM system with A60.csv matrix (after configuration is loaded)
-    std::cout << "[DEBUG] Initializing CRAM system..." << std::endl;
+    // Initialize CRAM system with A60.csv matrix
+    std::cout << "Initializing CRAM system..." << std::endl;
     if (!ldm.initialize_cram_system("./cram/A60.csv")) {
-        std::cerr << "[ERROR] CRAM system initialization failed" << std::endl;
+        std::cerr << Color::RED << "[ERROR] CRAM system initialization failed"
+                  << Color::RESET << std::endl;
         return 1;
     }
-    std::cout << "[DEBUG] CRAM system initialization completed" << std::endl;
+    std::cout << Color::GREEN << "CRAM system initialization completed"
+              << Color::RESET << std::endl;
 
     ldm.calculateAverageSettlingVelocity();
-    ldm.initializeParticlesEKI();  // Use EKI-specific initialization with true_emissions
-    
-    // === NaN 체크 1: 입자 초기화 직후 ===
-    //ldm.checkParticleNaN("입자 초기화 직후");
-    
-    // EKI 모드: 모든 기상자료를 사전에 로딩 (병렬 처리)
-    //std::cout << "[EKI] EKI 모드용 기상자료 사전 로딩 시작..." << std::endl;
+    ldm.initializeParticlesEKI();
+
+    // Preload all meteorological data for EKI mode
+    std::cout << "Preloading meteorological data for fast iterations..." << std::endl;
     if (!ldm.preloadAllEKIMeteorologicalData()) {
-        //std::cerr << "[ERROR] EKI 기상자료 사전 로딩 실패" << std::endl;
+        std::cerr << Color::RED << "[ERROR] Failed to preload meteorological data"
+                  << Color::RESET << std::endl;
         return 1;
     }
-    //std::cout << "[EKI] 모든 기상자료 사전 로딩 완료! 이제 EKI 반복연산에서 파일 읽기 없이 고속 실행됩니다." << std::endl;
-    
-    // === NaN 체크 2: 기상자료 로딩 후 ===
-    // ldm.checkMeteoDataNaN("기상자료 사전 로딩 후");
-    // ldm.checkParticleNaN("기상자료 사전 로딩 후");
-    
-    ldm.allocateGPUMemory();
+    std::cout << Color::GREEN << "All meteorological data preloaded successfully"
+              << Color::RESET << std::endl;
 
-    // === NaN 체크 3: GPU 메모리 할당 후 ===
-    // ldm.checkParticleNaN("GPU 메모리 할당 후");
+    ldm.allocateGPUMemory();
 
     // NOTE: Don't initialize EKI observation system here for single mode
     // It will be initialized properly for ensemble mode in the iteration loop
@@ -164,40 +160,42 @@ int main(int argc, char** argv) {
 
     // Initialize EKI writer with full configuration
     if (!eki_writer.initialize(eki_config, num_timesteps)) {
-        std::cerr << "[ERROR] Failed to initialize EKI IPC Writer" << std::endl;
+        std::cerr << Color::RED << "[ERROR] Failed to initialize EKI IPC Writer"
+                  << Color::RESET << std::endl;
         return 1;
     }
 
     ldm.startTimer();
 
     // Initialize EKI observation system for single mode
-    std::cout << "[EKI] Initializing observation system for single mode..." << std::endl;
+    std::cout << "Initializing observation system for single mode..." << std::endl;
     ldm.initializeEKIObservationSystem();
 
     // Enable VTK output for single mode run
     ldm.enable_vtk_output = true;
-    std::cout << "[VTK_OUTPUT] VTK output ENABLED for single mode run" << std::endl;
+    std::cout << "[VTK] Output enabled for single mode run" << std::endl;
 
-    // EKI 전용 시뮬레이션 실행 (사전 로딩된 기상자료 사용)
-    std::cout << "[EKI] Running simulation with EKI framework..." << std::endl;
-    //ldm.runSimulation_eki();
+    // Run EKI simulation with preloaded meteorological data
+    std::cout << "Running forward simulation..." << std::endl;
     ldm.runSimulation_eki();
-    
+
     ldm.stopTimer();
 
-    std::cout << "[EKI] Simulation completed. EKI results should be processed here." << std::endl;
+    std::cout << Color::GREEN << "Simulation completed successfully"
+              << Color::RESET << std::endl;
 
     // Save EKI observation results
     ldm.saveEKIObservationResults();
-    
+
     // Write observations to shared memory
-    std::cout << "[EKI] Writing observations to shared memory..." << std::endl;
+    std::cout << "Writing observations to shared memory..." << std::endl;
     
     // Get actual observation data from LDM object
     const std::vector<std::vector<float>>& observations = ldm.getEKIObservations();
     
     if (observations.empty()) {
-        std::cerr << "[ERROR] No observations collected during simulation" << std::endl;
+        std::cerr << Color::RED << "[ERROR] No observations collected during simulation"
+                  << Color::RESET << std::endl;
         return 1;
     }
     
@@ -211,27 +209,30 @@ int main(int argc, char** argv) {
         }
     }
     
-    std::cout << "[EKI] Collected " << observations.size() << " observation timesteps with " 
+    std::cout << "Collected " << observations.size() << " observation timesteps with "
               << (observations.empty() ? 0 : observations[0].size()) << " receptors each" << std::endl;
-    
+
     bool success = eki_writer.writeObservations(flat_observations.data(), num_receptors, num_timesteps);
 
     if (!success) {
-        std::cerr << "[ERROR] Failed to write observations to shared memory" << std::endl;
+        std::cerr << Color::RED << "[ERROR] Failed to write observations to shared memory"
+                  << Color::RESET << std::endl;
         return 1;
     }
 
-    std::cout << "[EKI] Observations successfully written to shared memory" << std::endl;
+    std::cout << Color::GREEN << "Observations successfully written to shared memory"
+              << Color::RESET << std::endl;
 
-    // Launch Python EKI script in background (non-blocking) with output logging
-    std::cout << "[EKI] Launching Python EKI script in background..." << std::endl;
+    // Launch Python EKI script in background
+    std::cout << "Launching Python EKI script in background..." << std::endl;
     int ret = system("PYTHONPATH=src/eki:$PYTHONPATH python src/eki/RunEstimator.py input_config input_data > logs/python_eki_output.log 2>&1 &");
     if (ret != 0) {
-        std::cout << "[EKI] Warning: Failed to launch Python script (code: " << ret << ")" << std::endl;
+        std::cout << Color::YELLOW << "Warning: Failed to launch Python script (code: " << ret << ")"
+                  << Color::RESET << std::endl;
     } else {
-        std::cout << "[EKI] Python script launched successfully in background" << std::endl;
-        std::cout << "[EKI] Python output will be saved to logs/python_eki_output.log" << std::endl;
-        std::cout << "[EKI] Python working directory: current directory (for eki_iterations/)" << std::endl;
+        std::cout << Color::GREEN << "Python script launched successfully in background"
+                  << Color::RESET << std::endl;
+        std::cout << "Python output will be saved to logs/python_eki_output.log" << std::endl;
         // Give Python a moment to start up
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
@@ -239,10 +240,10 @@ int main(int argc, char** argv) {
     // ========================================================================
     // ITERATION LOOP: Process multiple rounds of ensemble states from Python
     // ========================================================================
-    int max_iterations = ldm.getEKIConfig().iteration;  // From eki_settings.txt
+    int max_iterations = ldm.getEKIConfig().iteration;
     int current_iteration = 0;
 
-    std::cout << "[EKI] Maximum iterations configured: " << max_iterations << std::endl;
+    std::cout << "Maximum iterations configured: " << max_iterations << std::endl;
 
     LDM_EKI_IPC::EKIReader eki_reader;
     bool continue_iterations = true;
@@ -253,16 +254,24 @@ int main(int argc, char** argv) {
         // ========================================================================
         // Wait for ensemble states from Python
         // ========================================================================
-        std::cout << "\n[EKI] ========================================" << std::endl;
-        std::cout << "[EKI ITERATION " << current_iteration << "] Waiting for ensemble states from Python..." << std::endl;
-        std::cout << "[EKI] ========================================\n" << std::endl;
+        std::cout << "\n" << Color::BOLD << Color::CYAN
+                  << "========================================"
+                  << Color::RESET << std::endl;
+        std::cout << Color::BOLD << "ITERATION " << current_iteration << " - Waiting for ensemble states from Python..."
+                  << Color::RESET << std::endl;
+        std::cout << Color::BOLD << Color::CYAN
+                  << "========================================"
+                  << Color::RESET << "\n" << std::endl;
 
         if (!eki_reader.waitForEnsembleData(60)) {  // 60 second timeout
             if (current_iteration == 1) {
-                std::cerr << "[ERROR] Timeout waiting for initial ensemble data from Python" << std::endl;
-                std::cerr << "[ERROR] Python may have crashed or failed to send data" << std::endl;
+                std::cerr << Color::RED << "[ERROR] Timeout waiting for initial ensemble data from Python"
+                          << Color::RESET << std::endl;
+                std::cerr << Color::RED << "[ERROR] Python may have crashed or failed to send data"
+                          << Color::RESET << std::endl;
             } else {
-                std::cout << "[EKI] No more ensemble data received - Python has completed all iterations" << std::endl;
+                std::cout << Color::GREEN << "No more ensemble data received - Python has completed all iterations"
+                          << Color::RESET << std::endl;
                 continue_iterations = false;
             }
             break;
@@ -273,7 +282,8 @@ int main(int argc, char** argv) {
         int num_states, num_ensemble;
 
         if (!eki_reader.readEnsembleStates(ensemble_data, num_states, num_ensemble)) {
-            std::cerr << "[ERROR] Failed to read ensemble states from shared memory" << std::endl;
+            std::cerr << Color::RED << "[ERROR] Failed to read ensemble states from shared memory"
+                      << Color::RESET << std::endl;
             continue_iterations = false;
             break;
         }
@@ -281,10 +291,8 @@ int main(int argc, char** argv) {
         // ========================================================================
         // Display received ensemble data
         // ========================================================================
-        std::cout << "\n[EKI] ========================================" << std::endl;
-        std::cout << "[EKI ITERATION " << current_iteration << "] ENSEMBLE STATES RECEIVED FROM PYTHON" << std::endl;
-        std::cout << "[EKI] ========================================" << std::endl;
-        std::cout << "[EKI] Matrix dimensions: " << num_states << " states × "
+        std::cout << "\nEnsemble states received from Python" << std::endl;
+        std::cout << "Matrix dimensions: " << num_states << " states × "
                   << num_ensemble << " ensemble members" << std::endl;
 
         // Calculate statistics
@@ -293,10 +301,10 @@ int main(int argc, char** argv) {
         float sum = std::accumulate(ensemble_data.begin(), ensemble_data.end(), 0.0f);
         float mean_val = sum / ensemble_data.size();
 
-        std::cout << "[EKI] Data statistics:" << std::endl;
-        std::cout << "  - Min:  " << std::scientific << min_val << std::endl;
-        std::cout << "  - Max:  " << max_val << std::endl;
-        std::cout << "  - Mean: " << mean_val << std::endl;
+        std::cout << "Data statistics:" << std::endl;
+        std::cout << "  Min:  " << std::scientific << min_val << std::endl;
+        std::cout << "  Max:  " << max_val << std::endl;
+        std::cout << "  Mean: " << mean_val << std::endl;
 
         // DEBUG: Count zeros and negative values for ALL iterations
         int zero_count = 0;
@@ -314,12 +322,13 @@ int main(int argc, char** argv) {
         std::cout << "  - Negative values: " << negative_count << std::endl;
         std::cout << "  - Tiny values (<1e6): " << tiny_count << std::endl;
 
-        // IMPORTANT: Highlight if negatives are received
+        // Highlight if negatives are received
         if (negative_count > 0) {
-            std::cout << "\n  🔴🔴🔴 NEGATIVE VALUES DETECTED IN ITERATION " << current_iteration << " 🔴🔴🔴" << std::endl;
-            std::cout << "  This confirms Python iteration " << current_iteration << " data was received correctly!" << std::endl;
+            std::cout << Color::RED << "\n  WARNING: Negative values detected in iteration "
+                      << current_iteration << Color::RESET << std::endl;
         } else {
-            std::cout << "\n  ✅ No negative values in iteration " << current_iteration << std::endl;
+            std::cout << Color::GREEN << "\n  All values non-negative in iteration "
+                      << current_iteration << Color::RESET << std::endl;
         }
 
         // DEBUG: Save what LDM receives for comparison
@@ -355,13 +364,13 @@ int main(int argc, char** argv) {
 
         // Only display detailed data for first iteration
         if (current_iteration == 1) {
-            std::cout << "\n[EKI] Sample data (first state, first 20 ensemble members):" << std::endl;
+            std::cout << "\nSample data (first state, first 20 ensemble members):" << std::endl;
             int display_count = std::min(20, num_ensemble);
             for (int i = 0; i < display_count; i++) {
                 std::cout << "  [state 0, ensemble " << i << "] = " << ensemble_data[i] << std::endl;
             }
 
-            std::cout << "\n[EKI] Sample data (first ensemble member, first 10 states):" << std::endl;
+            std::cout << "\nSample data (first ensemble member, first 10 states):" << std::endl;
             int state_display = std::min(10, num_states);
             for (int s = 0; s < state_display; s++) {
                 std::cout << "  [state " << s << ", ensemble 0] = "
@@ -369,14 +378,10 @@ int main(int argc, char** argv) {
             }
         }
 
-        std::cout << "[EKI] ========================================\n" << std::endl;
-
         // ========================================================================
         // Ensemble Mode: Initialize particles with ensemble states
         // ========================================================================
-        std::cout << "\n[EKI_ENSEMBLE] ========================================" << std::endl;
-        std::cout << "[EKI_ENSEMBLE ITERATION " << current_iteration << "] Preparing ensemble simulation" << std::endl;
-        std::cout << "[EKI_ENSEMBLE] ========================================\n" << std::endl;
+        std::cout << "\n[ENSEMBLE] Preparing ensemble simulation for iteration " << current_iteration << std::endl;
 
         // Data format conversion: Python sends [state0_ens0, state0_ens1, ..., state1_ens0, ...]
         // We need: [ens0_state0, ens0_state1, ..., ens1_state0, ...] for row-major ensemble matrix
@@ -427,7 +432,8 @@ int main(int argc, char** argv) {
             }
 
             if (zero_count > 0) {
-                std::cout << "[DEBUG_FULL_MATRIX]   ⚠️⚠️⚠️  ZERO VALUES DETECTED IN ENSEMBLE MATRIX! ⚠️⚠️⚠️" << std::endl;
+                std::cout << Color::YELLOW << "[DEBUG_FULL_MATRIX]   WARNING: Zero values detected in ensemble matrix!"
+                          << Color::RESET << std::endl;
                 std::cout << "[DEBUG_FULL_MATRIX]   First 50 zero locations:" << std::endl;
                 int count = 0;
                 for (const auto& loc : zero_locations) {
@@ -464,9 +470,9 @@ int main(int argc, char** argv) {
             ldm.selected_ensemble_ids.clear();
             ldm.selected_ensemble_ids.push_back(7);
 
-            std::cout << "[EKI_ENSEMBLE] Mode configured: " << num_ensemble << " ensembles, "
+            std::cout << "[ENSEMBLE] Mode configured: " << num_ensemble << " ensembles, "
                       << num_timesteps << " observation timesteps" << std::endl;
-            std::cout << "[EKI_ENSEMBLE] Selected ensemble 7 for VTK output (fixed)" << std::endl;
+            std::cout << "[ENSEMBLE] Selected ensemble 7 for VTK output (fixed)" << std::endl;
 
             // First time: cleanup single mode and initialize ensemble mode observation system
             ldm.cleanupEKIObservationSystem();
@@ -476,10 +482,10 @@ int main(int argc, char** argv) {
         // Enable VTK output ONLY on the final iteration for performance
         if (current_iteration == max_iterations) {
             ldm.enable_vtk_output = true;
-            std::cout << "[VTK_OUTPUT] VTK output ENABLED for final iteration " << current_iteration << std::endl;
+            std::cout << "[VTK] Output enabled for final iteration " << current_iteration << std::endl;
         } else {
             ldm.enable_vtk_output = false;
-            std::cout << "[VTK_OUTPUT] VTK output DISABLED for iteration " << current_iteration << " (performance optimization)" << std::endl;
+            std::cout << "[VTK] Output disabled for iteration " << current_iteration << " (performance optimization)" << std::endl;
         }
 
         // Clear previous particles for reinitialization
@@ -535,16 +541,17 @@ int main(int argc, char** argv) {
         // Verify particle count after initialization
         if (current_iteration == 1) {
             size_t expected_particles = static_cast<size_t>(num_ensemble) * num_states * (10000 / 24);
-            std::cout << "[EKI_ENSEMBLE] Total particles after initialization: " << ldm.part.size() << std::endl;
-            std::cout << "[EKI_ENSEMBLE] Expected particles: ~" << expected_particles
+            std::cout << "[ENSEMBLE] Total particles after initialization: " << ldm.part.size() << std::endl;
+            std::cout << "[ENSEMBLE] Expected particles: ~" << expected_particles
                       << " (" << num_ensemble << " ensembles × " << num_states
                       << " states × " << (10000/24) << " particles/state)" << std::endl;
         } else {
-            std::cout << "[EKI_ENSEMBLE] Particles reinitialized: " << ldm.part.size() << std::endl;
+            std::cout << "[ENSEMBLE] Particles reinitialized: " << ldm.part.size() << std::endl;
         }
 
         if (ldm.part.size() == 0) {
-            std::cerr << "[ERROR] No particles initialized! Check initializeParticlesEKI_AllEnsembles()" << std::endl;
+            std::cerr << Color::RED << "[ERROR] No particles initialized! Check initializeParticlesEKI_AllEnsembles()"
+                      << Color::RESET << std::endl;
             continue_iterations = false;
             break;
         }
@@ -564,23 +571,17 @@ int main(int argc, char** argv) {
         ldm.resetEKIObservationSystemForNewIteration();
 
     // Run ensemble simulation
-    std::cout << "[EKI_ENSEMBLE] Starting ensemble forward simulation..." << std::endl;
+    std::cout << "[ENSEMBLE] Starting forward simulation..." << std::endl;
     ldm.startTimer();
-    //ldm.runSimulation_eki();  // Same simulation but with ensemble particles
-    ldm.runSimulation_eki();  // Same simulation but with ensemble particles
+    ldm.runSimulation_eki();
     ldm.stopTimer();
 
-    std::cout << "[EKI_ENSEMBLE] Ensemble simulation completed!" << std::endl;
-
-    // Save ensemble observation results
-    std::cout << "[EKI_ENSEMBLE] Saving ensemble observation results..." << std::endl;
-    // TODO: Implement saveEKIEnsembleObservationResults() function
-    // For now, observations are stored in ldm.eki_ensemble_observations
+    std::cout << Color::GREEN << "[ENSEMBLE] Simulation completed" << Color::RESET << std::endl;
 
     // ========================================================================
     // Send ensemble observations back to Python
     // ========================================================================
-    std::cout << "\n[EKI_ENSEMBLE] Preparing to send ensemble observations to Python..." << std::endl;
+    std::cout << "\n[ENSEMBLE] Preparing to send observations to Python..." << std::endl;
 
     // Format: [num_ensemble × num_receptors × num_timesteps]
     // Python expects: flat array that can be reshaped to (num_ensemble, num_receptors, num_timesteps)
@@ -607,38 +608,44 @@ int main(int argc, char** argv) {
 
         // Initialize ensemble observation shared memory
         if (!eki_writer.initializeEnsembleObservations(num_ensemble, eki_config.num_receptors, num_timesteps)) {
-            std::cerr << "[EKI_ENSEMBLE] Failed to initialize ensemble observation shared memory" << std::endl;
+            std::cerr << Color::RED << "[ERROR] Failed to initialize ensemble observation shared memory"
+                      << Color::RESET << std::endl;
             continue_iterations = false;
             break;
         }
 
-        // Write ensemble observations to shared memory (with current iteration number)
+        // Write ensemble observations to shared memory
         if (!eki_writer.writeEnsembleObservations(flat_ensemble_observations.data(), num_ensemble, eki_config.num_receptors, num_timesteps, current_iteration)) {
-            std::cerr << "[EKI_ENSEMBLE] Failed to write ensemble observations to shared memory" << std::endl;
+            std::cerr << Color::RED << "[ERROR] Failed to write ensemble observations to shared memory"
+                      << Color::RESET << std::endl;
             continue_iterations = false;
             break;
         }
 
-    std::cout << "[EKI_ENSEMBLE] Successfully sent " << total_obs_elements
-              << " observation values to shared memory" << std::endl;
-    std::cout << "[EKI_ENSEMBLE] Shape: [" << num_ensemble << " × "
+    std::cout << Color::GREEN << "[ENSEMBLE] Successfully sent " << total_obs_elements
+              << " observation values to shared memory" << Color::RESET << std::endl;
+    std::cout << "[ENSEMBLE] Shape: [" << num_ensemble << " × "
               << eki_config.num_receptors << " × " << num_timesteps << "]" << std::endl;
 
-    std::cout << "[EKI_ENSEMBLE] Iteration " << current_iteration << " completed.\n" << std::endl;
+    std::cout << Color::BOLD << Color::GREEN << "Iteration " << current_iteration << " completed"
+              << Color::RESET << "\n" << std::endl;
 
     } // End of iteration loop
 
     // ========================================================================
     // Cleanup (after all iterations)
     // ========================================================================
-    std::cout << "[EKI] All iterations completed. Cleaning up resources..." << std::endl;
-    std::cout << "[EKI] Total iterations processed: " << current_iteration << std::endl;
+    std::cout << Color::BOLD << Color::CYAN
+              << "\nAll iterations completed. Cleaning up resources..."
+              << Color::RESET << std::endl;
+    std::cout << Color::GREEN << "Total iterations processed: " << current_iteration
+              << Color::RESET << std::endl;
 
     // Cleanup EKI observation system
     ldm.cleanupEKIObservationSystem();
 
-    // EKI 기상자료 메모리 정리
-    std::cout << "[EKI] EKI 기상자료 메모리 정리 중..." << std::endl;
+    // Cleanup meteorological data memory
+    std::cout << "Cleaning up meteorological data memory..." << std::endl;
     ldm.cleanupEKIMeteorologicalData();
 
     // Cleanup shared memory
@@ -651,7 +658,8 @@ int main(int argc, char** argv) {
     std::cerr.rdbuf(cerrbuf);
     logFile.close();
 
-    std::cout << "[LOG] Simulation completed. All output saved to logs/ldm_eki_simulation.log" << std::endl;
+    std::cout << Color::GREEN << "Simulation completed. All output saved to logs/ldm_eki_simulation.log"
+              << Color::RESET << std::endl;
 
     // ========================================================================
     // Automatic Post-Processing: Generate Visualization
@@ -666,14 +674,17 @@ int main(int argc, char** argv) {
         int viz_ret = system("python3 util/compare_all_receptors.py > /tmp/ldm_viz.log 2>&1");
 
         if (viz_ret == 0) {
-            std::cout << "[VISUALIZATION] ✅ Successfully generated: output/results/all_receptors_comparison.png" << std::endl;
+            std::cout << Color::GREEN << "[VISUALIZATION] Successfully generated: output/results/all_receptors_comparison.png"
+                      << Color::RESET << std::endl;
         } else {
-            std::cout << "[VISUALIZATION] ⚠️  Visualization script failed (exit code: " << viz_ret << ")" << std::endl;
+            std::cout << Color::YELLOW << "[VISUALIZATION] Visualization script failed (exit code: " << viz_ret << ")"
+                      << Color::RESET << std::endl;
             std::cout << "[VISUALIZATION] Check /tmp/ldm_viz.log for details" << std::endl;
             std::cout << "[VISUALIZATION] You can manually run: python3 util/compare_all_receptors.py" << std::endl;
         }
     } else {
-        std::cout << "[VISUALIZATION] ⚠️  Script not found: util/compare_all_receptors.py" << std::endl;
+        std::cout << Color::YELLOW << "[VISUALIZATION] Script not found: util/compare_all_receptors.py"
+                  << Color::RESET << std::endl;
         std::cout << "[VISUALIZATION] Skipping automatic visualization" << std::endl;
     }
 

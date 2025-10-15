@@ -338,7 +338,7 @@ void LDM::initializeParticlesEKI_AllEnsembles(float* ensemble_states, int num_en
     std::cout << "[EKI_ENSEMBLE] Initializing particles for " << num_ensembles
               << " ensembles with " << num_timesteps << " timesteps each" << std::endl;
 
-    int particles_per_ensemble = nop;  // setting.txt에 지정된 입자 수
+    int particles_per_ensemble = nop;  // Particle count specified in setting.txt
     int particles_per_timestep = particles_per_ensemble / num_timesteps;
     int total_particles = particles_per_ensemble * num_ensembles;
 
@@ -374,13 +374,13 @@ void LDM::initializeParticlesEKI_AllEnsembles(float* ensemble_states, int num_en
     part.clear();
     part.reserve(total_particles);
 
-    // 각 앙상블별로 입자 생성
+    // Generate particles for each ensemble
     for (int ens = 0; ens < num_ensembles; ens++) {
         for (int t = 0; t < num_timesteps; t++) {
-            // 현재 타임스텝의 방출량 (ensemble_states는 row-major: [ens * num_timesteps + t])
+            // Current timestep's emission rate (ensemble_states is row-major: [ens * num_timesteps + t])
             float emission_value = ensemble_states[ens * num_timesteps + t];
 
-            // 이 타임스텝에 해당하는 입자들 생성
+            // Generate particles for this timestep
             for (int p = 0; p < particles_per_timestep; p++) {
                 // Source location
                 float x = (sources[0].lon + 179.0) / 0.5;
@@ -388,11 +388,11 @@ void LDM::initializeParticlesEKI_AllEnsembles(float* ensemble_states, int num_en
                 float z = sources[0].height;
                 float random_radius = dist(gen);
 
-                // timeidx: 각 앙상블 내에서의 로컬 입자 ID (1~particles_per_ensemble)
-                // 모든 앙상블이 동일한 timeidx 범위를 가져서 독립적으로 활성화됨
+                // timeidx: Local particle ID within each ensemble (1~particles_per_ensemble)
+                // All ensembles have identical timeidx range for independent activation
                 int timeidx = t * particles_per_timestep + p + 1;
 
-                // 입자 생성
+                // Generate particle
                 LDMpart particle(x, y, z,
                                 g_mpi.decayConstants[PROCESS_INDEX],
                                 emission_value,
@@ -401,7 +401,7 @@ void LDM::initializeParticlesEKI_AllEnsembles(float* ensemble_states, int num_en
                                 g_mpi.particleDensities[PROCESS_INDEX],
                                 timeidx);
 
-                // 앙상블 ID 설정
+                // Set ensemble ID
                 particle.ensemble_id = ens;
 
                 // Initialize multi-nuclide concentrations array
@@ -428,14 +428,14 @@ void LDM::initializeParticlesEKI_AllEnsembles(float* ensemble_states, int num_en
 
     std::cout << "[EKI_ENSEMBLE] Created " << part.size() << " total particles" << std::endl;
 
-    // ★ 핵심: ensemble_id 기준으로 정렬 (독립 시뮬레이션)
-    // 각 앙상블의 입자들이 연속적으로 배치되어 독립적으로 활성화됨
+    // CRITICAL: Sort by ensemble_id (independent simulations)
+    // Particles of each ensemble are arranged continuously for independent activation
     std::cout << "[EKI_ENSEMBLE] Sorting particles by ensemble_id..." << std::endl;
     std::sort(part.begin(), part.end(), [](const LDMpart& a, const LDMpart& b) {
         if (a.ensemble_id != b.ensemble_id)
-            return a.ensemble_id < b.ensemble_id;  // 앙상블 우선
+            return a.ensemble_id < b.ensemble_id;  // Ensemble priority
         else
-            return a.timeidx < b.timeidx;  // 같은 앙상블 내에서 timeidx 순서
+            return a.timeidx < b.timeidx;  // timeidx order within same ensemble
     });
 
     std::cout << "[EKI_ENSEMBLE] Particle initialization complete!" << std::endl;

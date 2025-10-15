@@ -334,7 +334,7 @@ public:
         munmap(ens_obs_config_map, sizeof(EKIConfigBasic));
         close(ens_obs_config_fd);
 
-        std::cout << "[EKI_IPC] Ensemble observation config initialized: "
+        std::cout << "Ensemble observation config initialized: "
                   << ensemble_size << " ensembles, "
                   << num_receptors << " receptors, "
                   << num_timesteps << " timesteps" << std::endl;
@@ -390,10 +390,10 @@ public:
             sum_val += val;
         }
 
-        std::cout << "[EKI_IPC] Ensemble observations written to shared memory:" << std::endl;
-        std::cout << "  - Size: " << ens_obs_data_size << " bytes" << std::endl;
-        std::cout << "  - Shape: [" << ensemble_size << " × " << num_receptors << " × " << num_timesteps << "]" << std::endl;
-        std::cout << "  - Min: " << min_val << ", Max: " << max_val << ", Mean: " << (sum_val / total_elements) << std::endl;
+        std::cout << "Ensemble observations written to shared memory:" << std::endl;
+        std::cout << "  Size: " << ens_obs_data_size << " bytes" << std::endl;
+        std::cout << "  Shape: [" << ensemble_size << " × " << num_receptors << " × " << num_timesteps << "]" << std::endl;
+        std::cout << "  Min: " << min_val << ", Max: " << max_val << ", Mean: " << (sum_val / total_elements) << std::endl;
 
         // Memory Doctor: Log sent ensemble observations with iteration
         if (g_memory_doctor.isEnabled()) {
@@ -463,7 +463,7 @@ public:
 
     // Wait for ensemble data to be ready
     bool waitForEnsembleData(int timeout_seconds = 60, int expected_iteration = -1) {
-        std::cout << "[EKI_READER] Waiting for ensemble data from Python (timeout: "
+        std::cout << "Waiting for ensemble data from Python (timeout: "
                   << timeout_seconds << "s)..." << std::endl;
 
         const char* config_path = "/dev/shm/ldm_eki_ensemble_config";
@@ -493,7 +493,7 @@ public:
                                 close(test_fd);
 
                                 if (bytes_read == sizeof(header) && header.status == 1) {
-                                    std::cout << "[EKI_READER] Fresh ensemble data detected! Iteration ID: "
+                                    std::cout << "Fresh ensemble data detected! Iteration ID: "
                                               << config.timestep_id << " (previous: " << last_iteration_id << ")" << std::endl;
                                     last_iteration_id = config.timestep_id;
                                     return true;
@@ -502,7 +502,7 @@ public:
                         } else if (config.timestep_id == last_iteration_id && i > 5) {
                             // Same iteration ID after 5 seconds - probably stale data
                             if (i % 5 == 0) {
-                                std::cout << "[EKI_READER] Waiting for new data... (current iteration ID: "
+                                std::cout << "Waiting for new data... (current iteration ID: "
                                           << config.timestep_id << ")" << std::endl;
                             }
                         }
@@ -512,7 +512,7 @@ public:
             sleep(1);
         }
 
-        std::cerr << "[EKI_READER] Timeout waiting for ensemble data" << std::endl;
+        std::cerr << "[ERROR] Timeout waiting for ensemble data" << std::endl;
         return false;
     }
 
@@ -522,7 +522,7 @@ public:
 
         config_fd = open(shm_path, O_RDONLY);
         if (config_fd < 0) {
-            perror("[EKI_READER] open config failed");
+            perror("[ERROR] Failed to open config");
             return false;
         }
 
@@ -532,7 +532,7 @@ public:
         config_fd = -1;
 
         if (bytes_read != sizeof(config)) {
-            std::cerr << "[EKI_READER] Failed to read config (got " << bytes_read << " bytes)" << std::endl;
+            std::cerr << "[ERROR] Failed to read config (got " << bytes_read << " bytes)" << std::endl;
             return false;
         }
 
@@ -540,7 +540,7 @@ public:
         num_ensemble = config.num_ensemble;
         timestep_id = config.timestep_id;
 
-        std::cout << "[EKI_READER] Config loaded: " << num_states << " states × "
+        std::cout << "Config loaded: " << num_states << " states × "
                   << num_ensemble << " ensemble (timestep " << timestep_id << ")" << std::endl;
         return true;
     }
@@ -557,14 +557,14 @@ public:
 
         data_fd = open(shm_path, O_RDONLY);
         if (data_fd < 0) {
-            perror("[EKI_READER] open data failed");
+            perror("[ERROR] Failed to open data");
             return false;
         }
 
         // Get file size
         struct stat st;
         if (fstat(data_fd, &st) != 0) {
-            perror("[EKI_READER] fstat failed");
+            perror("[ERROR] fstat failed");
             close(data_fd);
             data_fd = -1;
             return false;
@@ -574,7 +574,7 @@ public:
         size_t expected_size = sizeof(EnsembleDataHeader) + num_states * num_ensemble * sizeof(float);
 
         if (file_size != expected_size) {
-            std::cerr << "[EKI_READER] Size mismatch: file=" << file_size
+            std::cerr << "[ERROR] Size mismatch: file=" << file_size
                       << " bytes, expected=" << expected_size << " bytes" << std::endl;
             close(data_fd);
             data_fd = -1;
@@ -584,7 +584,7 @@ public:
         // Map entire file
         data_map = mmap(nullptr, file_size, PROT_READ, MAP_SHARED, data_fd, 0);
         if (data_map == MAP_FAILED) {
-            perror("[EKI_READER] mmap failed");
+            perror("[ERROR] mmap failed");
             close(data_fd);
             data_fd = -1;
             return false;
@@ -594,7 +594,7 @@ public:
         auto* header = reinterpret_cast<EnsembleDataHeader*>(data_map);
 
         if (header->status != 1) {
-            std::cerr << "[EKI_READER] Data not ready (status=" << header->status << ")" << std::endl;
+            std::cerr << "[ERROR] Data not ready (status=" << header->status << ")" << std::endl;
             munmap(data_map, file_size);
             close(data_fd);
             data_map = nullptr;
@@ -603,7 +603,7 @@ public:
         }
 
         if (header->rows != num_states || header->cols != num_ensemble) {
-            std::cerr << "[EKI_READER] Dimension mismatch: header says " << header->rows
+            std::cerr << "[ERROR] Dimension mismatch: header says " << header->rows
                       << "×" << header->cols << ", config says " << num_states << "×" << num_ensemble << std::endl;
             munmap(data_map, file_size);
             close(data_fd);
@@ -621,7 +621,7 @@ public:
         output.resize(data_count);
         std::memcpy(output.data(), data_ptr, data_count * sizeof(float));
 
-        std::cout << "[EKI_READER] Ensemble states loaded: " << num_states << "×" << num_ensemble
+        std::cout << "Ensemble states loaded: " << num_states << "×" << num_ensemble
                   << " matrix (" << data_count * sizeof(float) << " bytes)" << std::endl;
 
         // Calculate statistics
@@ -630,7 +630,7 @@ public:
         float sum = std::accumulate(output.begin(), output.end(), 0.0f);
         float mean_val = sum / data_count;
 
-        std::cout << "[EKI_READER] Data range: [" << min_val << ", " << max_val
+        std::cout << "Data range: [" << min_val << ", " << max_val
                   << "], mean: " << mean_val << std::endl;
 
         // Memory Doctor: Log received ensemble states with iteration from timestep_id
@@ -674,7 +674,7 @@ public:
     static void unlinkEnsembleSharedMemory() {
         shm_unlink(SHM_ENSEMBLE_CONFIG_NAME);
         shm_unlink(SHM_ENSEMBLE_DATA_NAME);
-        std::cout << "[EKI_READER] Ensemble shared memory unlinked" << std::endl;
+        std::cout << "Ensemble shared memory unlinked" << std::endl;
     }
 };
 

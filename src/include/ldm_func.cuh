@@ -347,15 +347,15 @@ void LDM::runSimulation_eki(){
     cudaMemset(d_dryDep, 0, meshSize);
     cudaMemset(d_wetDep, 0, meshSize);
 
-    // EKI 모드: 기상자료 사전 로딩 확인
+    // EKI mode: Check meteorological data preloading
     if (!g_eki_meteo.is_initialized) {
-        std::cerr << "[ERROR] EKI 기상자료가 초기화되지 않았습니다. preloadAllEKIMeteorologicalData()를 먼저 호출하세요." << std::endl;
+        std::cerr << "[ERROR] EKI meteorological data not initialized. Call preloadAllEKIMeteorologicalData() first." << std::endl;
         return;
     }
-    std::cout << "[EKI_SIM] EKI 모드 시뮬레이션 시작 - 사전 로딩된 기상자료 사용" << std::endl;
+    std::cout << "EKI simulation starting - using preloaded meteorological data" << std::endl;
 
-    // === NaN 체크 4: 시뮬레이션 시작 직전 ===
-    checkParticleNaN("시뮬레이션 시작 직전");
+    // === NaN check 4: Before simulation start ===
+    checkParticleNaN("Before simulation start");
 
     //log_first_particle_concentrations(0, 0.0f);
 
@@ -368,14 +368,14 @@ void LDM::runSimulation_eki(){
         activationRatio = (currentTime) / time_end;
         t0 = (currentTime - static_cast<int>(currentTime/time_interval)*time_interval) / time_interval;
 
-        // EKI 모드: 현재 시간에 맞는 기상자료 자동 선택 (과거/미래 쌍)
+        // EKI mode: Automatic meteorological data selection (past/future pair)
         int meteo_time_interval = Constants::time_interval;
         int past_meteo_index = static_cast<int>(currentTime / meteo_time_interval);
         int future_meteo_index = past_meteo_index + 1;
         
-        // 범위 체크 및 기상자료 업데이트
+        // Range check and meteorological data update
         if (past_meteo_index >= 0 && past_meteo_index < g_eki_meteo.num_time_steps) {
-            // 과거 시점 기상자료 (device_meteorological_flex_pres0, unis0)
+            // Past meteorological data (device_meteorological_flex_pres0, unis0)
             FlexPres* past_pres_ptr;
             FlexUnis* past_unis_ptr;
             
@@ -389,26 +389,26 @@ void LDM::runSimulation_eki(){
             cudaMemcpy(device_meteorological_flex_unis0, past_unis_ptr, 
                        g_eki_meteo.unis_data_size, cudaMemcpyDeviceToDevice);
             
-            // Height 데이터도 업데이트
+            // Update height data as well
             flex_hgt = g_eki_meteo.host_flex_hgt_data[past_meteo_index];
             
-            // 첫 번째 타임스텝에서만 높이 데이터 확인
+            // Verify height data at first timestep only
             if (timestep == 0) {
-                printf("[DEBUG_HGT_UPDATE] 타임스텝 %d: 인덱스 %d 높이 데이터 첫 5개값: ", timestep, past_meteo_index);
+                printf("[DEBUG_HGT_UPDATE] Timestep %d: Index %d height data first 5 values: ", timestep, past_meteo_index);
                 for (int i = 0; i < std::min(5, (int)flex_hgt.size()); i++) {
                     printf("%.1f ", flex_hgt[i]);
                 }
                 printf("... %.1f\n", flex_hgt[flex_hgt.size()-1]);
             }
             
-            // CRITICAL FIX: GPU 상수 메모리에 높이 데이터 복사
+            // CRITICAL FIX: Copy height data to GPU constant memory
             cudaError_t hgt_err = cudaMemcpyToSymbol(d_flex_hgt, flex_hgt.data(), sizeof(float) * dimZ_GFS);
             if (hgt_err != cudaSuccess) {
-                printf("[ERROR] Height 데이터 GPU 복사 실패: %s\n", cudaGetErrorString(hgt_err));
+                printf("[ERROR] Failed to copy height data to GPU: %s\n", cudaGetErrorString(hgt_err));
             }
         }
-        
-        // 미래 시점 기상자료 (device_meteorological_flex_pres1, unis1)
+
+        // Future meteorological data (device_meteorological_flex_pres1, unis1)
         if (future_meteo_index >= 0 && future_meteo_index < g_eki_meteo.num_time_steps) {
             FlexPres* future_pres_ptr;
             FlexUnis* future_unis_ptr;
@@ -423,7 +423,7 @@ void LDM::runSimulation_eki(){
             cudaMemcpy(device_meteorological_flex_unis1, future_unis_ptr, 
                        g_eki_meteo.unis_data_size, cudaMemcpyDeviceToDevice);
         } else {
-            // 마지막 시간대인 경우: 미래 데이터를 과거 데이터와 동일하게 설정 (외삽 방지)
+            // Last time period: Set future data same as past data (prevent extrapolation)
             if (past_meteo_index >= 0 && past_meteo_index < g_eki_meteo.num_time_steps) {
                 FlexPres* past_pres_ptr;
                 FlexUnis* past_unis_ptr;
@@ -440,20 +440,20 @@ void LDM::runSimulation_eki(){
             }
         }
 
-        // === 첫 번째 타임스텝에서만 상세 NaN 체크 ===
+        // === Detailed NaN check at first timestep only ===
         if (timestep == 0) {
-            printf("[NaN_CHECK] 첫 번째 타임스텝 - 커널 실행 전 상세 체크\n");
-            printf("  현재 시간: %.1f초, t0: %.6f\n", currentTime, t0);
-            printf("  과거 기상자료 인덱스: %d, 미래 기상자료 인덱스: %d\n", past_meteo_index, future_meteo_index);
-            checkParticleNaN("첫 커널 실행 전", 5);
-            checkMeteoDataNaN("기상자료 업데이트 후");
+            printf("[NaN_CHECK] First timestep - detailed check before kernel execution\n");
+            printf("  Current time: %.1fs, t0: %.6f\n", currentTime, t0);
+            printf("  Past meteo index: %d, Future meteo index: %d\n", past_meteo_index, future_meteo_index);
+            checkParticleNaN("Before first kernel execution", 5);
+            checkMeteoDataNaN("After meteorological data update");
         }
 
         // Use ensemble kernel for ensemble mode, regular kernel for single mode
         if (is_ensemble_mode) {
             // Ensemble mode: activate particles independently per ensemble
             int total_particles = part.size();
-            int particles_per_ensemble = nop;  // 각 앙상블당 입자 수 (10000)
+            int particles_per_ensemble = nop;  // Particles per ensemble (10000)
             update_particle_flags_ens<<<blocks, threadsPerBlock>>>
                 (d_part, activationRatio, total_particles, particles_per_ensemble);
         } else {
@@ -463,9 +463,9 @@ void LDM::runSimulation_eki(){
         }
         cudaDeviceSynchronize();
 
-        // === 첫 번째 커널 후 NaN 체크 ===
+        // === NaN check after first kernel ===
         if (timestep == 0) {
-            checkParticleNaN("update_particle_flags 후", 5);
+            checkParticleNaN("After update_particle_flags", 5);
         }
 
         NuclideConfig* nucConfig = NuclideConfig::getInstance();
@@ -492,11 +492,11 @@ void LDM::runSimulation_eki(){
         }
         cudaDeviceSynchronize();
 
-        // === 가장 중요한 체크: move_part_by_wind_mpi 후 ===
+        // === Most important check: After move_part_by_wind_mpi ===
         if (timestep == 0) {
-            checkParticleNaN("move_part_by_wind_mpi 후 (첫 번째)", 5);
+            checkParticleNaN("After move_part_by_wind_mpi (first)", 5);
         } else if (timestep <= 3) {
-            checkParticleNaN("move_part_by_wind_mpi 후 (타임스텝 " + std::to_string(timestep) + ")", 3);
+            checkParticleNaN("After move_part_by_wind_mpi (timestep " + std::to_string(timestep) + ")", 3);
         }
 
         timestep++; 
@@ -526,7 +526,7 @@ void LDM::runSimulation_eki(){
             printf("-------------------------------------------------\n");
             printf("[EKI] Time : %f\tsec\n", currentTime);
             printf("[EKI] Time steps : \t%d of \t%d\n", timestep, (int)(time_end/dt));
-            printf("[EKI] 기상자료 인덱스 - 과거: %d, 미래: %d (내삽비율 t0=%.3f)\n",
+            printf("[EKI] Meteo indices - Past: %d, Future: %d (interpolation ratio t0=%.3f)\n",
                    past_meteo_index,
                    (future_meteo_index < g_eki_meteo.num_time_steps) ? future_meteo_index : past_meteo_index,
                    t0);
@@ -554,112 +554,112 @@ void LDM::runSimulation_eki(){
         auto duration0 = std::chrono::duration_cast<std::chrono::microseconds>(stepEnd - stepStart);
         totalElapsedTime += static_cast<double>(duration0.count()/1.0e6);
 
-        // EKI 모드에서는 기상자료 로딩이 필요 없음 (이미 모든 데이터가 메모리에 있음)
-        // 기존의 loadFlexGFSData() 호출 제거됨
+        // EKI mode: No meteorological data loading needed (all data already in memory)
+        // Previous loadFlexGFSData() call removed
 
     }
 
-    std::cout << "[EKI_SIM] EKI 시뮬레이션 완료" << std::endl;
+    std::cout << "EKI simulation completed" << std::endl;
     std::cout << "Elapsed data time: " << totalElapsedTime << " seconds" << std::endl;
 }
 
 void LDM::checkParticleNaN(const std::string& location, int max_check) {
     if (part.empty()) {
-        std::cout << "[NaN_CHECK] " << location << ": 입자 데이터가 비어있음" << std::endl;
+        std::cout << "[NaN_CHECK] " << location << ": Particle data is empty" << std::endl;
         return;
     }
-    
+
     int nan_count = 0;
     int check_count = std::min(max_check, static_cast<int>(part.size()));
-    
+
     for (int i = 0; i < check_count; i++) {
         const LDMpart& p = part[i];
         bool has_nan = std::isnan(p.x) || std::isnan(p.y) || std::isnan(p.z) ||
                       std::isnan(p.u_wind) || std::isnan(p.v_wind) || std::isnan(p.w_wind) ||
                       std::isnan(p.up) || std::isnan(p.vp) || std::isnan(p.wp) ||
                       std::isnan(p.u) || std::isnan(p.v) || std::isnan(p.w);
-        
+
         if (has_nan) {
-            printf("[NaN_CHECK] %s: 입자 %d에서 NaN 발견!\n", location.c_str(), i);
-            printf("  위치: x=%.6f, y=%.6f, z=%.6f\n", p.x, p.y, p.z);
-            printf("  바람: u=%.6f, v=%.6f, w=%.6f\n", p.u_wind, p.v_wind, p.w_wind);
-            printf("  난류: up=%.6f, vp=%.6f, wp=%.6f\n", p.up, p.vp, p.wp);
-            printf("  속도: u=%.6f, v=%.6f, w=%.6f\n", p.u, p.v, p.w);
+            printf("[NaN_CHECK] %s: NaN detected in particle %d!\n", location.c_str(), i);
+            printf("  Position: x=%.6f, y=%.6f, z=%.6f\n", p.x, p.y, p.z);
+            printf("  Wind: u=%.6f, v=%.6f, w=%.6f\n", p.u_wind, p.v_wind, p.w_wind);
+            printf("  Turbulence: up=%.6f, vp=%.6f, wp=%.6f\n", p.up, p.vp, p.wp);
+            printf("  Velocity: u=%.6f, v=%.6f, w=%.6f\n", p.u, p.v, p.w);
             nan_count++;
-            if (nan_count >= 3) break; // 최대 3개만 출력
+            if (nan_count >= 3) break; // Print max 3
         }
     }
-    
+
     if (nan_count > 0) {
-        printf("[NaN_CHECK] %s: %d개 입자에서 NaN 발견! (총 %d개 중 %d개 체크)\n", 
-               location.c_str(), nan_count, static_cast<int>(part.size()), check_count);
+        printf("[NaN_CHECK] %s: NaN detected in %d particles! (Checked %d out of %d total)\n",
+               location.c_str(), nan_count, check_count, static_cast<int>(part.size()));
     } else {
-        std::cout << "[NaN_CHECK] " << location << ": NaN 없음 (첫 " << check_count << "개 입자 체크)" << std::endl;
+        std::cout << "[NaN_CHECK] " << location << ": No NaN (checked first " << check_count << " particles)" << std::endl;
     }
 }
 
 void LDM::checkMeteoDataNaN(const std::string& location) {
-    // Host 메모리에서 첫 번째 기상자료 체크
-    if (g_eki_meteo.is_initialized && !g_eki_meteo.host_flex_pres_data.empty() && 
+    // Check first meteorological data in host memory
+    if (g_eki_meteo.is_initialized && !g_eki_meteo.host_flex_pres_data.empty() &&
         g_eki_meteo.host_flex_pres_data[0] != nullptr) {
-        
+
         FlexPres* pres_data = g_eki_meteo.host_flex_pres_data[0];
         FlexUnis* unis_data = g_eki_meteo.host_flex_unis_data[0];
-        
+
         int nan_count = 0;
-        int check_count = 100; // 처음 100개 격점만 체크
-        
+        int check_count = 100; // Check first 100 grid points
+
         for (int i = 0; i < check_count && i < (dimX_GFS + 1) * dimY_GFS * dimZ_GFS; i++) {
-            bool has_nan = std::isnan(pres_data[i].UU) || std::isnan(pres_data[i].VV) || 
+            bool has_nan = std::isnan(pres_data[i].UU) || std::isnan(pres_data[i].VV) ||
                           std::isnan(pres_data[i].WW) || std::isnan(pres_data[i].RHO) ||
                           std::isnan(pres_data[i].DRHO);
-            
+
             if (has_nan) {
-                printf("[NaN_CHECK] %s: 기상자료 인덱스 %d에서 NaN 발견!\n", location.c_str(), i);
-                printf("  UU=%.6f, VV=%.6f, WW=%.6f, RHO=%.6f, DRHO=%.6f\n", 
-                       pres_data[i].UU, pres_data[i].VV, pres_data[i].WW, 
+                printf("[NaN_CHECK] %s: NaN detected in meteorological data index %d!\n", location.c_str(), i);
+                printf("  UU=%.6f, VV=%.6f, WW=%.6f, RHO=%.6f, DRHO=%.6f\n",
+                       pres_data[i].UU, pres_data[i].VV, pres_data[i].WW,
                        pres_data[i].RHO, pres_data[i].DRHO);
                 nan_count++;
                 if (nan_count >= 3) break;
             }
         }
-        
+
         if (nan_count > 0) {
-            printf("[NaN_CHECK] %s: 기상자료에서 %d개 NaN 발견!\n", location.c_str(), nan_count);
+            printf("[NaN_CHECK] %s: NaN detected in %d meteorological data points!\n", location.c_str(), nan_count);
         } else {
-            std::cout << "[NaN_CHECK] " << location << ": 기상자료 NaN 없음" << std::endl;
+            std::cout << "[NaN_CHECK] " << location << ": No NaN in meteorological data" << std::endl;
         }
-        
-        // GPU 메모리에서 현재 사용 중인 기상자료도 체크
+
+        // Also check current meteorological data in GPU memory
         if (device_meteorological_flex_pres0 && device_meteorological_flex_pres1) {
-            printf("[NaN_CHECK] %s: GPU 기상자료 슬롯 체크 중...\n", location.c_str());
-            
-            // GPU에서 샘플 데이터 가져오기
+            printf("[NaN_CHECK] %s: Checking GPU meteorological data slots...\n", location.c_str());
+
+            // Get sample data from GPU
             FlexPres sample_pres0, sample_pres1;
             FlexUnis sample_unis0, sample_unis1;
-            
+
             cudaMemcpy(&sample_pres0, device_meteorological_flex_pres0, sizeof(FlexPres), cudaMemcpyDeviceToHost);
             cudaMemcpy(&sample_pres1, device_meteorological_flex_pres1, sizeof(FlexPres), cudaMemcpyDeviceToHost);
             cudaMemcpy(&sample_unis0, device_meteorological_flex_unis0, sizeof(FlexUnis), cudaMemcpyDeviceToHost);
             cudaMemcpy(&sample_unis1, device_meteorological_flex_unis1, sizeof(FlexUnis), cudaMemcpyDeviceToHost);
-            
-            bool gpu_has_nan = std::isnan(sample_pres0.UU) || std::isnan(sample_pres0.VV) || 
+
+            bool gpu_has_nan = std::isnan(sample_pres0.UU) || std::isnan(sample_pres0.VV) ||
                               std::isnan(sample_pres0.WW) || std::isnan(sample_pres0.RHO) ||
-                              std::isnan(sample_pres1.UU) || std::isnan(sample_pres1.VV) || 
+                              std::isnan(sample_pres1.UU) || std::isnan(sample_pres1.VV) ||
                               std::isnan(sample_pres1.WW) || std::isnan(sample_pres1.RHO);
-            
+
             if (gpu_has_nan) {
-                printf("[NaN_CHECK] %s: GPU 기상자료 슬롯에서 NaN 발견!\n", location.c_str());
-                printf("  슬롯0: UU=%.6f, VV=%.6f, WW=%.6f, RHO=%.6f\n", 
+                printf("[NaN_CHECK] %s: NaN detected in GPU meteorological data slots!\n", location.c_str());
+                printf("  Slot0: UU=%.6f, VV=%.6f, WW=%.6f, RHO=%.6f\n",
                        sample_pres0.UU, sample_pres0.VV, sample_pres0.WW, sample_pres0.RHO);
-                printf("  슬롯1: UU=%.6f, VV=%.6f, WW=%.6f, RHO=%.6f\n", 
+                printf("  Slot1: UU=%.6f, VV=%.6f, WW=%.6f, RHO=%.6f\n",
                        sample_pres1.UU, sample_pres1.VV, sample_pres1.WW, sample_pres1.RHO);
             } else {
-                printf("[NaN_CHECK] %s: GPU 기상자료 슬롯 NaN 없음\n", location.c_str());
+                printf("[NaN_CHECK] %s: No NaN in GPU meteorological data slots\n", location.c_str());
             }
         }
     } else {
-        std::cout << "[NaN_CHECK] " << location << ": 기상자료 미초기화" << std::endl;
+        std::cout << "[NaN_CHECK] " << location << ": Meteorological data not initialized" << std::endl;
     }
 }
 
@@ -1307,15 +1307,15 @@ void LDM::runSimulation_eki_dump(){
     cudaMemset(d_dryDep, 0, meshSize);
     cudaMemset(d_wetDep, 0, meshSize);
 
-    // EKI 모드: 기상자료 사전 로딩 확인
+    // EKI mode: Check meteorological data preloading
     if (!g_eki_meteo.is_initialized) {
-        std::cerr << "[ERROR] EKI 기상자료가 초기화되지 않았습니다. preloadAllEKIMeteorologicalData()를 먼저 호출하세요." << std::endl;
+        std::cerr << "[ERROR] EKI meteorological data not initialized. Call preloadAllEKIMeteorologicalData() first." << std::endl;
         return;
     }
-    std::cout << "[EKI_SIM] EKI 모드 시뮬레이션 시작 - 사전 로딩된 기상자료 사용" << std::endl;
+    std::cout << "EKI simulation starting - using preloaded meteorological data" << std::endl;
 
-    // === NaN 체크 4: 시뮬레이션 시작 직전 ===
-    checkParticleNaN("시뮬레이션 시작 직전");
+    // === NaN check 4: Before simulation start ===
+    checkParticleNaN("Before simulation start");
 
     //log_first_particle_concentrations(0, 0.0f);
 
@@ -1328,14 +1328,14 @@ void LDM::runSimulation_eki_dump(){
         activationRatio = (currentTime) / time_end;
         t0 = (currentTime - static_cast<int>(currentTime/time_interval)*time_interval) / time_interval;
 
-        // EKI 모드: 현재 시간에 맞는 기상자료 자동 선택 (과거/미래 쌍)
+        // EKI mode: Automatic meteorological data selection (past/future pair)
         int meteo_time_interval = Constants::time_interval;
         int past_meteo_index = static_cast<int>(currentTime / meteo_time_interval);
         int future_meteo_index = past_meteo_index + 1;
         
-        // 범위 체크 및 기상자료 업데이트
+        // Range check and meteorological data update
         if (past_meteo_index >= 0 && past_meteo_index < g_eki_meteo.num_time_steps) {
-            // 과거 시점 기상자료 (device_meteorological_flex_pres0, unis0)
+            // Past meteorological data (device_meteorological_flex_pres0, unis0)
             FlexPres* past_pres_ptr;
             FlexUnis* past_unis_ptr;
             
@@ -1349,26 +1349,26 @@ void LDM::runSimulation_eki_dump(){
             cudaMemcpy(device_meteorological_flex_unis0, past_unis_ptr, 
                        g_eki_meteo.unis_data_size, cudaMemcpyDeviceToDevice);
             
-            // Height 데이터도 업데이트
+            // Update height data as well
             flex_hgt = g_eki_meteo.host_flex_hgt_data[past_meteo_index];
             
-            // 첫 번째 타임스텝에서만 높이 데이터 확인
+            // Verify height data at first timestep only
             if (timestep == 0) {
-                printf("[DEBUG_HGT_UPDATE] 타임스텝 %d: 인덱스 %d 높이 데이터 첫 5개값: ", timestep, past_meteo_index);
+                printf("[DEBUG_HGT_UPDATE] Timestep %d: Index %d height data first 5 values: ", timestep, past_meteo_index);
                 for (int i = 0; i < std::min(5, (int)flex_hgt.size()); i++) {
                     printf("%.1f ", flex_hgt[i]);
                 }
                 printf("... %.1f\n", flex_hgt[flex_hgt.size()-1]);
             }
             
-            // CRITICAL FIX: GPU 상수 메모리에 높이 데이터 복사
+            // CRITICAL FIX: Copy height data to GPU constant memory
             cudaError_t hgt_err = cudaMemcpyToSymbol(d_flex_hgt, flex_hgt.data(), sizeof(float) * dimZ_GFS);
             if (hgt_err != cudaSuccess) {
-                printf("[ERROR] Height 데이터 GPU 복사 실패: %s\n", cudaGetErrorString(hgt_err));
+                printf("[ERROR] Failed to copy height data to GPU: %s\n", cudaGetErrorString(hgt_err));
             }
         }
-        
-        // 미래 시점 기상자료 (device_meteorological_flex_pres1, unis1)
+
+        // Future meteorological data (device_meteorological_flex_pres1, unis1)
         if (future_meteo_index >= 0 && future_meteo_index < g_eki_meteo.num_time_steps) {
             FlexPres* future_pres_ptr;
             FlexUnis* future_unis_ptr;
@@ -1383,7 +1383,7 @@ void LDM::runSimulation_eki_dump(){
             cudaMemcpy(device_meteorological_flex_unis1, future_unis_ptr, 
                        g_eki_meteo.unis_data_size, cudaMemcpyDeviceToDevice);
         } else {
-            // 마지막 시간대인 경우: 미래 데이터를 과거 데이터와 동일하게 설정 (외삽 방지)
+            // Last time period: Set future data same as past data (prevent extrapolation)
             if (past_meteo_index >= 0 && past_meteo_index < g_eki_meteo.num_time_steps) {
                 FlexPres* past_pres_ptr;
                 FlexUnis* past_unis_ptr;
@@ -1400,20 +1400,20 @@ void LDM::runSimulation_eki_dump(){
             }
         }
 
-        // === 첫 번째 타임스텝에서만 상세 NaN 체크 ===
+        // === Detailed NaN check at first timestep only ===
         if (timestep == 0) {
-            printf("[NaN_CHECK] 첫 번째 타임스텝 - 커널 실행 전 상세 체크\n");
-            printf("  현재 시간: %.1f초, t0: %.6f\n", currentTime, t0);
-            printf("  과거 기상자료 인덱스: %d, 미래 기상자료 인덱스: %d\n", past_meteo_index, future_meteo_index);
-            checkParticleNaN("첫 커널 실행 전", 5);
-            checkMeteoDataNaN("기상자료 업데이트 후");
+            printf("[NaN_CHECK] First timestep - detailed check before kernel execution\n");
+            printf("  Current time: %.1fs, t0: %.6f\n", currentTime, t0);
+            printf("  Past meteo index: %d, Future meteo index: %d\n", past_meteo_index, future_meteo_index);
+            checkParticleNaN("Before first kernel execution", 5);
+            checkMeteoDataNaN("After meteorological data update");
         }
 
         // Use ensemble kernel for ensemble mode, regular kernel for single mode
         if (is_ensemble_mode) {
             // Ensemble mode: activate particles independently per ensemble
             int total_particles = part.size();
-            int particles_per_ensemble = nop;  // 각 앙상블당 입자 수 (10000)
+            int particles_per_ensemble = nop;  // Particles per ensemble (10000)
             update_particle_flags_ens<<<blocks, threadsPerBlock>>>
                 (d_part, activationRatio, total_particles, particles_per_ensemble);
         } else {
@@ -1423,9 +1423,9 @@ void LDM::runSimulation_eki_dump(){
         }
         cudaDeviceSynchronize();
 
-        // === 첫 번째 커널 후 NaN 체크 ===
+        // === NaN check after first kernel ===
         if (timestep == 0) {
-            checkParticleNaN("update_particle_flags 후", 5);
+            checkParticleNaN("After update_particle_flags", 5);
         }
 
         NuclideConfig* nucConfig = NuclideConfig::getInstance();
@@ -1452,11 +1452,11 @@ void LDM::runSimulation_eki_dump(){
         }
         cudaDeviceSynchronize();
 
-        // === 가장 중요한 체크: move_part_by_wind_mpi 후 ===
+        // === Most important check: After move_part_by_wind_mpi ===
         if (timestep == 0) {
-            checkParticleNaN("move_part_by_wind_mpi 후 (첫 번째)", 5);
+            checkParticleNaN("After move_part_by_wind_mpi (first)", 5);
         } else if (timestep <= 3) {
-            checkParticleNaN("move_part_by_wind_mpi 후 (타임스텝 " + std::to_string(timestep) + ")", 3);
+            checkParticleNaN("After move_part_by_wind_mpi (timestep " + std::to_string(timestep) + ")", 3);
         }
 
         timestep++; 
@@ -1486,7 +1486,7 @@ void LDM::runSimulation_eki_dump(){
             printf("-------------------------------------------------\n");
             printf("[EKI] Time : %f\tsec\n", currentTime);
             printf("[EKI] Time steps : \t%d of \t%d\n", timestep, (int)(time_end/dt));
-            printf("[EKI] 기상자료 인덱스 - 과거: %d, 미래: %d (내삽비율 t0=%.3f)\n",
+            printf("[EKI] Meteo indices - Past: %d, Future: %d (interpolation ratio t0=%.3f)\n",
                    past_meteo_index,
                    (future_meteo_index < g_eki_meteo.num_time_steps) ? future_meteo_index : past_meteo_index,
                    t0);
@@ -1514,11 +1514,11 @@ void LDM::runSimulation_eki_dump(){
         auto duration0 = std::chrono::duration_cast<std::chrono::microseconds>(stepEnd - stepStart);
         totalElapsedTime += static_cast<double>(duration0.count()/1.0e6);
 
-        // EKI 모드에서는 기상자료 로딩이 필요 없음 (이미 모든 데이터가 메모리에 있음)
-        // 기존의 loadFlexGFSData() 호출 제거됨
+        // EKI mode: No meteorological data loading needed (all data already in memory)
+        // Previous loadFlexGFSData() call removed
 
     }
 
-    std::cout << "[EKI_SIM] EKI 시뮬레이션 완료" << std::endl;
+    std::cout << "EKI simulation completed" << std::endl;
     std::cout << "Elapsed data time: " << totalElapsedTime << " seconds" << std::endl;
 }

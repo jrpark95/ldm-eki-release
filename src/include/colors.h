@@ -2,12 +2,12 @@
 
 // ANSI color codes for terminal output
 namespace Color {
-    const char* RESET   = "\033[0m";
-    const char* RED     = "\033[31m";
-    const char* GREEN   = "\033[32m";
-    const char* YELLOW  = "\033[33m";
-    const char* BLUE    = "\033[34m";
-    const char* MAGENTA = "\033[35m";
-    const char* CYAN    = "\033[36m";
-    const char* BOLD    = "\033[1m";
+    inline constexpr const char* RESET   = "\033[0m";
+    inline constexpr const char* RED     = "\033[31m";
+    inline constexpr const char* GREEN   = "\033[32m";
+    inline constexpr const char* YELLOW  = "\033[33m";
+    inline constexpr const char* BLUE    = "\033[34m";
+    inline constexpr const char* MAGENTA = "\033[35m";
+    inline constexpr const char* CYAN    = "\033[36m";
+    inline constexpr const char* BOLD    = "\033[1m";
 }

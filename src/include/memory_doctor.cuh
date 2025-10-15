@@ -15,6 +15,7 @@
 #include <sys/stat.h>
 #include <dirent.h>
 #include <unistd.h>
+#include "colors.h"
 
 class MemoryDoctor {
 private:
@@ -34,8 +35,10 @@ public:
             // Clean all existing log files in memory_doctor folder
             cleanLogDirectory();
 
-            std::cout << "[MEMORY_DOCTOR] ⚕️ Memory Doctor Mode ENABLED - All IPC data will be logged" << std::endl;
-            std::cout << "[MEMORY_DOCTOR] 🧹 Cleaned previous log files from " << log_dir << std::endl;
+            std::cout << Color::YELLOW << "[MEMORY_DOCTOR] " << Color::RESET
+                      << "⚕️  Mode ENABLED - All IPC data will be logged\n";
+            std::cout << Color::YELLOW << "[MEMORY_DOCTOR] " << Color::RESET
+                      << "🧹 Cleaned previous log files from " << Color::BOLD << log_dir << Color::RESET << "\n";
         }
     }
 
@@ -153,8 +156,10 @@ public:
         file << std::endl << "=== END OF DATA ===" << std::endl;
         file.close();
 
-        std::cout << "[MEMORY_DOCTOR] 📤 Iteration " << iteration << ": C++ sent " << data_type
-                  << " (" << rows << "x" << cols << ") → Python" << std::endl;
+        std::cout << Color::YELLOW << "[MEMORY_DOCTOR] " << Color::RESET
+                  << "📤 Iteration " << Color::BOLD << iteration << Color::RESET
+                  << ": C++ sent " << data_type
+                  << " (" << rows << "×" << cols << ") → Python\n";
     }
 
     // Log data received by LDM from Python (with explicit iteration number)
@@ -241,8 +246,10 @@ public:
         file << std::endl << "=== END OF DATA ===" << std::endl;
         file.close();
 
-        std::cout << "[MEMORY_DOCTOR] 📥 Iteration " << iteration << ": C++ received " << data_type
-                  << " (" << rows << "x" << cols << ") ← Python" << std::endl;
+        std::cout << Color::YELLOW << "[MEMORY_DOCTOR] " << Color::RESET
+                  << "📥 Iteration " << Color::BOLD << iteration << Color::RESET
+                  << ": C++ received " << data_type
+                  << " (" << rows << "×" << cols << ") ← Python\n";
     }
 };
 

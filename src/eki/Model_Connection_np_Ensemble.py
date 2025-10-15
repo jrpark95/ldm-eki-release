@@ -13,6 +13,19 @@ import struct
 from eki_ipc_reader import receive_gamma_dose_matrix_shm, EKIIPCReader, read_eki_full_config_shm
 from memory_doctor import memory_doctor
 
+# Color output support
+try:
+    from colorama import Fore, Style, init
+    init(autoreset=True)
+    HAS_COLOR = True
+except ImportError:
+    # Fallback if colorama not available
+    class DummyColor:
+        def __getattr__(self, name):
+            return ''
+    Fore = Style = DummyColor()
+    HAS_COLOR = False
+
 def load_config_from_shared_memory():
     """
     Load configuration from shared memory and convert to input_config/input_data dictionaries.
@@ -23,7 +36,7 @@ def load_config_from_shared_memory():
     Returns:
         tuple: (input_config, input_data) dictionaries
     """
-    print("[EKI] Loading configuration from shared memory...")
+    print(f"{Fore.MAGENTA}[ENSEMBLE]{Style.RESET_ALL} Loading configuration from shared memory...")
 
     # Read full configuration from shared memory
     shm_data = read_eki_full_config_shm()
@@ -31,10 +44,9 @@ def load_config_from_shared_memory():
     # Enable Memory Doctor mode if configured
     if shm_data.get('memory_doctor', 'Off').lower() in ['on', '1', 'true']:
         memory_doctor.set_enabled(True)
-        print("[EKI] ⚕️ Memory Doctor Mode ENABLED based on shared memory config")
+        print(f"{Fore.YELLOW}[DEBUG]{Style.RESET_ALL} ⚕️  Memory Doctor Mode enabled")
     else:
         memory_doctor.set_enabled(False)
-        print("[EKI] Memory Doctor Mode is OFF")
 
     # Construct input_config dictionary (matches original YAML structure)
     input_config = {
@@ -155,12 +167,12 @@ def load_config_from_shared_memory():
         'real_source1_boundary': [0.0, 1.0e+14],  # Kr-88
     }
 
-    print(f"[EKI] Configuration loaded from shared memory:")
-    print(f"  - Ensemble size: {input_config['sample_ctrl']}")
-    print(f"  - Iteration: {input_config['iteration']}")
-    print(f"  - Receptors: {input_data['nreceptor']}")
-    print(f"  - Sources: {input_data['nsource']}")
-    print(f"  - GPU: {input_config['nGPU']} devices")
+    print(f"{Fore.GREEN}✓{Style.RESET_ALL} Configuration loaded:")
+    print(f"  Ensemble size      : {Style.BRIGHT}{input_config['sample_ctrl']}{Style.RESET_ALL}")
+    print(f"  Iterations         : {Style.BRIGHT}{input_config['iteration']}{Style.RESET_ALL}")
+    print(f"  Receptors          : {Style.BRIGHT}{input_data['nreceptor']}{Style.RESET_ALL}")
+    print(f"  Sources            : {Style.BRIGHT}{input_data['nsource']}{Style.RESET_ALL}")
+    print(f"  GPU devices        : {Style.BRIGHT}{input_config['nGPU']}{Style.RESET_ALL}")
 
     return input_config, input_data
 
@@ -288,16 +300,14 @@ class EKIConfigManager:
             reader = EKIIPCReader()
             self.ensemble_size, self.num_receptors, self.num_timesteps = reader.read_eki_config()
             self._is_loaded = True
-            print(f"[EKI_CONFIG] Loaded: {self.ensemble_size} ensembles, "
-                  f"{self.num_receptors} receptors, {self.num_timesteps} timesteps")
         except Exception as e:
-            print(f"[EKI_CONFIG] Failed to load from shared memory: {e}")
+            print(f"{Fore.YELLOW}[WARNING]{Style.RESET_ALL} Failed to load config from shared memory: {e}")
             # Set default values from setting.txt (24 for 6 hours @ 15min intervals)
             self.ensemble_size = 100
             self.num_receptors = 3
             self.num_timesteps = 24
             self._is_loaded = True
-            print(f"[EKI_CONFIG] Using default values")
+            print(f"  → Using default values: {self.ensemble_size} ens, {self.num_receptors} rec, {self.num_timesteps} steps")
     
     def get_ensemble_size(self):
         if not self._is_loaded:
@@ -354,31 +364,8 @@ def receive_gamma_dose_matrix_shm_wrapper():
         3D numpy array of shape (1, num_receptors, num_timesteps) 
     """
     try:
-        print("[EKI_IPC] Using shared memory for gamma dose data reception...")
         gamma_dose_data = receive_gamma_dose_matrix_shm()
-        print(f"[EKI_IPC] Successfully received data with shape: {gamma_dose_data.shape}")
-        
-        # 터미널에 받은 행렬 출력
-        print("\n=== 공유메모리로 받은 감마선량 행렬 ===")
-        print(f"Shape: {gamma_dose_data.shape}")
-        print(f"Data type: {gamma_dose_data.dtype}")
-        print(f"Min value: {gamma_dose_data.min():.6e}")
-        print(f"Max value: {gamma_dose_data.max():.6e}")
-        print(f"Mean value: {gamma_dose_data.mean():.6e}")
-        
-        # 첫 번째 배치의 모든 데이터 출력 (동적 리셉터 × 타임스텝)
-        print("\n--- 전체 행렬 데이터 ---")
-        matrix_2d = gamma_dose_data[0]  # (num_receptors, num_timesteps) 부분만 추출
-        for r in range(matrix_2d.shape[0]):  # 각 리셉터별로
-            print(f"\nReceptor {r+1}:")
-            receptor_data = matrix_2d[r]
-            # 10개씩 끊어서 출력
-            for i in range(0, len(receptor_data), 10):
-                chunk = receptor_data[i:i+10]
-                chunk_str = ' '.join([f'{val:.3e}' for val in chunk])
-                print(f"  T{i+1:2d}-{min(i+10, len(receptor_data)):2d}: {chunk_str}")
-        
-        print("=====================================\n")
+        print(f"{Fore.BLUE}[IPC]{Style.RESET_ALL} Received initial observations: {gamma_dose_data.shape}")
 
         # Exit immediately after displaying the matrix for testing
         # import sys
@@ -386,8 +373,9 @@ def receive_gamma_dose_matrix_shm_wrapper():
 
         return gamma_dose_data
     except Exception as e:
-        print(f"[EKI_IPC] Shared memory read failed: {e}")
-        print("[EKI_IPC] Falling back to TCP socket method...")
+        print(f"{Fore.RED}{Style.BRIGHT}[ERROR]{Style.RESET_ALL} Shared memory read failed: {e}")
+        print(f"  → Check if LDM has written initial observations to /dev/shm/ldm_eki_*")
+        print(f"{Fore.YELLOW}[WARNING]{Style.RESET_ALL} Falling back to TCP socket method...")
         
         # Get dimensions from EKI config manager (no hardcoding)
         num_receptors = eki_config.get_num_receptors()
@@ -688,27 +676,17 @@ class Model(object):
         model_obs_list = []
         tmp_states = state.copy()
         #np.set_printoptions(threshold=np.inf)
-        print(f"[EKI] state_to_ob called with state shape: {tmp_states.shape}")
-        print(f"[EKI] Input state statistics - min: {state.min():.3e}, max: {state.max():.3e}, mean: {state.mean():.3e}")
-        print(f"[EKI] Copied state statistics - min: {tmp_states.min():.3e}, max: {tmp_states.max():.3e}, mean: {tmp_states.mean():.3e}")
+        print(f"{Fore.MAGENTA}[ENSEMBLE]{Style.RESET_ALL} Forward model: {tmp_states.shape[0]} states × {tmp_states.shape[1]} members")
 
         # IMPORTANT: Delete previous observation files to avoid reading stale data
         import os
         ensemble_obs_config_path = "/dev/shm/ldm_eki_ensemble_obs_config"
         ensemble_obs_data_path = "/dev/shm/ldm_eki_ensemble_obs_data"
 
-        if os.path.exists(ensemble_obs_config_path):
-            os.remove(ensemble_obs_config_path)
-            print(f"[EKI] Removed previous observation config file")
-        if os.path.exists(ensemble_obs_data_path):
-            os.remove(ensemble_obs_data_path)
-            print(f"[EKI] Removed previous observation data file")
-
-        # DEBUG: Print negative value statistics for verification
-        neg_count = (tmp_states < 0).sum()
-        if neg_count > 0:
-            print(f"[EKI DEBUG] Sending {neg_count} NEGATIVE values to LDM")
-            print(f"[EKI DEBUG] Min value being sent: {tmp_states.min():.3e}")
+        # Clean previous observation files
+        for path in [ensemble_obs_config_path, ensemble_obs_data_path]:
+            if os.path.exists(path):
+                os.remove(path)
 
         # NOTE: Don't delete ensemble state files - just overwrite them
         # C++ waitForEnsembleData() uses iteration ID to detect new data
@@ -741,10 +719,10 @@ class Model(object):
         writer = EKIIPCWriter()
         writer.write_ensemble_config(tmp_states.shape[0], tmp_states.shape[1], self._iteration_counter)
         writer.write_ensemble_states(tmp_states, tmp_states.shape[0], tmp_states.shape[1])
-        print(f"[EKI] Sent ensemble states with iteration ID: {self._iteration_counter}")
+        print(f"{Fore.BLUE}[IPC]{Style.RESET_ALL} Sent ensemble states (iteration {self._iteration_counter})")
 
         # Wait for LDM to complete ensemble simulation and write observations
-        print("[EKI] Waiting for LDM to complete ensemble simulation...")
+        print(f"{Fore.CYAN}[SYSTEM]{Style.RESET_ALL} Waiting for LDM simulation...", end='', flush=True)
         import time
         import os
 
@@ -766,8 +744,7 @@ class Model(object):
                     config_size = os.path.getsize(ensemble_obs_config_path)
                     data_size = os.path.getsize(ensemble_obs_data_path)
                     if config_size > 0 and data_size > 0:
-                        print(f"[EKI] Ensemble observation files detected after {time.time() - start_time:.1f}s")
-                        print(f"[EKI] Config: {config_size} bytes, Data: {data_size} bytes")
+                        print(f" {Fore.GREEN}✓{Style.RESET_ALL} ({time.time() - start_time:.1f}s)")
                         files_ready = True
                         # Small delay to ensure write is complete
                         time.sleep(0.1)
@@ -775,23 +752,20 @@ class Model(object):
                 except OSError:
                     pass  # File may have been deleted between exists() and getsize()
 
-            # Show progress every 5 seconds
-            elapsed = time.time() - start_time
-            if int(elapsed) % 5 == 0 and elapsed - int(elapsed) < poll_interval:
-                print(f"[EKI] Still waiting... ({int(elapsed)}s elapsed)")
-
             time.sleep(poll_interval)
 
         if not files_ready:
-            raise TimeoutError(f"[EKI] Timeout waiting for LDM ensemble observations after {max_wait_time}s")
+            print(f" {Fore.RED}✗{Style.RESET_ALL}")
+            raise TimeoutError(f"{Fore.RED}{Style.BRIGHT}[ERROR]{Style.RESET_ALL} Timeout waiting for LDM ({max_wait_time}s)\n"
+                             f"  → Check if LDM process is running\n"
+                             f"  → Check logs/ldm_eki_simulation.log for errors")
 
         # Receive ensemble observations from LDM via shared memory (pass iteration for logging)
         from eki_ipc_reader import receive_ensemble_observations_shm
         tmp_results = receive_ensemble_observations_shm(self._iteration_counter)
         # After C++ fix, shape is now: [num_ensemble, num_timesteps, num_receptors]
         # This matches reference implementation: timestep-major within each ensemble
-        print(f"[EKI] Received ensemble observations shape: {tmp_results.shape}")
-        print(f"[EKI] Observations statistics - min: {tmp_results.min():.3e}, max: {tmp_results.max():.3e}, mean: {tmp_results.mean():.3e}")
+        print(f"{Fore.BLUE}[IPC]{Style.RESET_ALL} Received ensemble observations: {tmp_results.shape}")
 
         # Save all iteration ensemble observations to logs2/dev
         # Convert to reference format: (ensemble, receptors, timesteps)
@@ -821,7 +795,6 @@ class Model(object):
             ensemble_obs = tmp_results[ens].T  # Now (num_receptors, num_timesteps)
             model_obs_list.append(np.asarray(ensemble_obs).reshape(-1))
 
-        print(f"[EKI] Converted to model_obs_list with {len(model_obs_list)} ensembles")
         del tmp_results
 
         # gpuff.destroy_context()

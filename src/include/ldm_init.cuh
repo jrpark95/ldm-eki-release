@@ -29,9 +29,10 @@ void LDM::loadSimulationConfiguration(){
     g_raddecay = g_config.getInt("radioactive_decay_model", 1);
     
     // Print physics model status
-    std::cout << "Physics models: TURB=" << g_turb_switch 
-              << ", DRYDEP=" << g_drydep 
-              << ", WETDEP=" << g_wetdep 
+    std::cout << Color::BOLD << "Physics Models" << Color::RESET << std::endl;
+    std::cout << "  TURB=" << g_turb_switch
+              << ", DRYDEP=" << g_drydep
+              << ", WETDEP=" << g_wetdep
               << ", RADDECAY=" << g_raddecay << std::endl;
     
     // Clean output directory before simulation
@@ -125,9 +126,6 @@ void LDM::loadSimulationConfiguration(){
     err = cudaMemcpyToSymbol(d_freq_output, &freq_output, sizeof(int));
     if (err != cudaSuccess) printf("Error copying to symbol: %s\n", cudaGetErrorString(err));
     
-    // Copy physics model settings to device constant memory
-    printf("[DEBUG] Physics model settings: TURB=%d, DRYDEP=%d, WETDEP=%d, RADDECAY=%d\n", 
-           g_turb_switch, g_drydep, g_wetdep, g_raddecay);
     
     err = cudaMemcpyToSymbol(d_turb_switch, &g_turb_switch, sizeof(int));
     if (err != cudaSuccess) printf("Error copying turb_switch to symbol: %s\n", cudaGetErrorString(err));
@@ -140,11 +138,6 @@ void LDM::loadSimulationConfiguration(){
     err = cudaMemcpyToSymbol(d_nop, &nop, sizeof(int));
     if (err != cudaSuccess) printf("Error copying to symbol: %s\n", cudaGetErrorString(err));
 
-    // DEBUG: Print dose calculation parameters
-    printf("[DEBUG DOSE] nop = %d\n", nop);
-    printf("[DEBUG DOSE] time_end = %f\n", time_end);
-    printf("[DEBUG DOSE] dt = %f\n", dt);
-    printf("[DEBUG DOSE] time_end/nop = %f (dose normalization factor)\n", time_end / (float)nop);
     err = cudaMemcpyToSymbol(d_isRural, &isRural, sizeof(bool));
     if (err != cudaSuccess) printf("Error copying to symbol: %s\n", cudaGetErrorString(err));
     err = cudaMemcpyToSymbol(d_isPG, &isPG, sizeof(bool));
@@ -208,18 +201,6 @@ void LDM::initializeParticles(){
                     float initial_ratio = nucConfig->getInitialRatio(nuc);
                     current_particle.concentrations[nuc] = conc.value * initial_ratio;
                     
-                    // Debug: Check for NaN in initialization
-                    if (particle_count < 3 && nuc < 5) {
-                        std::cout << "[DEBUG INIT] Particle " << particle_count 
-                                  << " Nuclide " << nuc 
-                                  << " conc.value=" << conc.value 
-                                  << " initial_ratio=" << initial_ratio 
-                                  << " final_conc=" << current_particle.concentrations[nuc];
-                        if (std::isnan(current_particle.concentrations[nuc])) {
-                            std::cout << " **NaN DETECTED**";
-                        }
-                        std::cout << std::endl;
-                    }
                 } else {
                     current_particle.concentrations[nuc] = 0.0f;
                 }
@@ -246,7 +227,8 @@ void LDM::initializeParticlesEKI(){
         return;
     }
     
-    std::cout << "[EKI] Initializing particles using true_emissions time series (" 
+    std::cout << Color::MAGENTA << "[ENSEMBLE] " << Color::RESET
+              << "Initializing " << nop << " particles ("
               << g_eki.true_emissions.size() << " time steps)" << std::endl;
     
     int particles_per_interval = nop / g_eki.true_emissions.size();
@@ -318,8 +300,9 @@ void LDM::initializeParticlesEKI(){
         }
     }
 
-    std::cout << "[EKI] Initialized " << part.size() << " particles using "
-              << g_eki.true_emissions.size() << " emission time steps" << std::endl;
+    std::cout << Color::GREEN << "  " << Color::RESET
+              << "Initialized " << Color::BOLD << part.size() << Color::RESET
+              << " particles" << std::endl;
 
     std::sort(part.begin(), part.end(), [](const LDMpart& a, const LDMpart& b) {
         return a.timeidx < b.timeidx;
@@ -335,34 +318,15 @@ void LDM::initializeParticlesEKI_AllEnsembles(float* ensemble_states, int num_en
         return;
     }
 
-    std::cout << "[EKI_ENSEMBLE] Initializing particles for " << num_ensembles
-              << " ensembles with " << num_timesteps << " timesteps each" << std::endl;
-
     int particles_per_ensemble = nop;  // Particle count specified in setting.txt
     int particles_per_timestep = particles_per_ensemble / num_timesteps;
     int total_particles = particles_per_ensemble * num_ensembles;
 
-    std::cout << "[EKI_ENSEMBLE] Particles per ensemble: " << particles_per_ensemble << std::endl;
-    std::cout << "[EKI_ENSEMBLE] Particles per timestep: " << particles_per_timestep << std::endl;
-    std::cout << "[EKI_ENSEMBLE] Total particles: " << total_particles << std::endl;
+    std::cout << Color::MAGENTA << "[ENSEMBLE] " << Color::RESET
+              << "Initializing " << Color::BOLD << num_ensembles << Color::RESET
+              << " ensembles × " << Color::BOLD << num_timesteps << Color::RESET
+              << " timesteps (" << Color::BOLD << total_particles << Color::RESET << " particles)" << std::endl;
 
-    // DEBUG: Check emission values for first ensemble (EVERY call to catch iteration differences)
-    std::cout << "[DEBUG_EMISSIONS] Ensemble 0 emission values (first 3 and any zeros):" << std::endl;
-    int zero_timesteps = 0;
-    for (int t = 0; t < num_timesteps; t++) {
-        float emission = ensemble_states[0 * num_timesteps + t];
-        if (t < 3 || emission == 0.0f) {
-            std::cout << "  Timestep " << t << ": " << emission;
-            if (emission == 0.0f) {
-                std::cout << " ⚠️  ZERO!";
-                zero_timesteps++;
-            }
-            std::cout << std::endl;
-        }
-    }
-    if (zero_timesteps > 0) {
-        std::cout << "[DEBUG_EMISSIONS] ⚠️  Found " << zero_timesteps << " zero emission timesteps!" << std::endl;
-    }
 
     std::random_device rd;
     auto now = std::chrono::high_resolution_clock::now();
@@ -421,25 +385,25 @@ void LDM::initializeParticlesEKI_AllEnsembles(float* ensemble_states, int num_en
             }
         }
 
-        if ((ens + 1) % 10 == 0) {
-            std::cout << "[EKI_ENSEMBLE] Created particles for " << (ens + 1) << "/" << num_ensembles << " ensembles" << std::endl;
+        // Progress indicator (only show every 20%)
+        if ((ens + 1) % (num_ensembles / 5) == 0 || (ens + 1) == num_ensembles) {
+            std::cout << "\r  Progress: " << (ens + 1) << "/" << num_ensembles
+                      << " (" << ((ens + 1) * 100 / num_ensembles) << "%)" << std::flush;
         }
     }
 
-    std::cout << "[EKI_ENSEMBLE] Created " << part.size() << " total particles" << std::endl;
+    std::cout << "\r" << Color::GREEN << "  " << Color::RESET
+              << "Created " << Color::BOLD << part.size() << Color::RESET << " particles";
 
     // CRITICAL: Sort by ensemble_id (independent simulations)
-    // Particles of each ensemble are arranged continuously for independent activation
-    std::cout << "[EKI_ENSEMBLE] Sorting particles by ensemble_id..." << std::endl;
     std::sort(part.begin(), part.end(), [](const LDMpart& a, const LDMpart& b) {
         if (a.ensemble_id != b.ensemble_id)
-            return a.ensemble_id < b.ensemble_id;  // Ensemble priority
+            return a.ensemble_id < b.ensemble_id;
         else
-            return a.timeidx < b.timeidx;  // timeidx order within same ensemble
+            return a.timeidx < b.timeidx;
     });
 
-    std::cout << "[EKI_ENSEMBLE] Particle initialization complete!" << std::endl;
-    std::cout << "[EKI_ENSEMBLE] Memory layout: time-sorted for parallel ensemble execution" << std::endl;
+    std::cout << " (sorted by ensemble)" << std::endl;
 }
 
 void LDM::calculateAverageSettlingVelocity(){
@@ -559,8 +523,8 @@ void LDM::calculateSettlingVelocity(){
 }
 
 void LDM::cleanOutputDirectory() {
-    std::cout << "Cleaning output directory..." << std::endl;
-    
+    std::cout << "Cleaning output directory... " << std::flush;
+
     // Remove all files in output directory
     #ifdef _WIN32
         system("del /Q output\\*.* 2>nul");
@@ -569,12 +533,13 @@ void LDM::cleanOutputDirectory() {
         system("rm -f output/*.csv 2>/dev/null");
         system("rm -f output/*.txt 2>/dev/null");
     #endif
-    
-    std::cout << "Output directory cleaned." << std::endl;
+
+    std::cout << Color::GREEN << "" << Color::RESET << std::endl;
 }
 
 void LDM::loadEKISettings() {
-    std::cout << "Loading EKI settings from data/eki_settings.txt..." << std::endl;
+    std::cout << Color::CYAN << "[SYSTEM] " << Color::RESET
+              << "Loading EKI settings... " << std::flush;
     
     FILE* ekiFile = fopen("data/eki_settings.txt", "r");
     if (!ekiFile) {
@@ -767,54 +732,38 @@ void LDM::loadEKISettings() {
     }
     
     fclose(ekiFile);
-    
-    // Print parsed EKI settings
-    std::cout << "EKI Settings Loaded:" << std::endl;
-    std::cout << "  Time Interval: " << g_eki.time_interval << " " << g_eki.time_unit << std::endl;
-    std::cout << "  Number of Receptors: " << g_eki.num_receptors << std::endl;
-    std::cout << "  Receptor Capture Radius: " << g_eki.receptor_capture_radius << " degrees" << std::endl;
-    std::cout << "  Receptor Locations: " << g_eki.receptor_locations.size() << " locations loaded" << std::endl;
-    
-    for (size_t i = 0; i < g_eki.receptor_locations.size() && i < 5; i++) {
-        std::cout << "    Receptor " << (i+1) << ": (" << g_eki.receptor_locations[i].first 
-                  << ", " << g_eki.receptor_locations[i].second << ")" << std::endl;
-    }
-    
-    std::cout << "  True Emission Series: " << g_eki.true_emissions.size() << " time steps" << std::endl;
-    std::cout << "  Prior Mode: " << g_eki.prior_mode << std::endl;
-    
-    if (g_eki.prior_mode == "constant") {
-        std::cout << "  Prior Constant: " << g_eki.prior_constant << " Bq" << std::endl;
-    } else {
-        std::cout << "  Prior Emission Series: " << g_eki.prior_emissions.size() << " time steps" << std::endl;
-    }
-    
-    std::cout << "  Ensemble Size: " << g_eki.ensemble_size << std::endl;
-    std::cout << "  Noise Level: " << g_eki.noise_level << std::endl;
-    std::cout << "  Memory Doctor Mode: " << (g_eki.memory_doctor_mode ? "ON ⚕️" : "OFF") << std::endl;
 
-    std::cout << "EKI settings loaded and stored in global g_eki for persistent access." << std::endl;
+    std::cout << Color::GREEN << "" << Color::RESET << std::endl;
+
+    // Print essential EKI settings (condensed)
+    std::cout << Color::BOLD << "EKI Configuration" << Color::RESET << std::endl;
+    std::cout << "  Receptors          : " << Color::BOLD << g_eki.num_receptors << Color::RESET
+              << " (radius: " << g_eki.receptor_capture_radius << "°)" << std::endl;
+    std::cout << "  Emission timesteps : " << Color::BOLD << g_eki.true_emissions.size() << Color::RESET
+              << " (" << g_eki.time_interval << " " << g_eki.time_unit << ")" << std::endl;
+    std::cout << "  Ensemble size      : " << Color::BOLD << g_eki.ensemble_size << Color::RESET << std::endl;
+
+    if (g_eki.memory_doctor_mode) {
+        std::cout << "  Memory Doctor      : " << Color::YELLOW << "ON" << Color::RESET << std::endl;
+    }
 }
 
 // ================== GRID RECEPTOR DEBUG MODE FUNCTIONS ==================
 
 void LDM::initializeGridReceptors(int grid_count_param, float grid_spacing_param) {
-    std::cout << "[GRID] Initializing grid receptor debug system..." << std::endl;
-
     // Store grid parameters
     grid_count = grid_count_param;
     grid_spacing = grid_spacing_param;
     grid_receptor_total = (2 * grid_count + 1) * (2 * grid_count + 1);
 
-    std::cout << "[GRID] Creating " << grid_receptor_total << " receptors in a "
-              << (2*grid_count+1) << "×" << (2*grid_count+1) << " grid" << std::endl;
+    std::cout << Color::CYAN << "[SYSTEM] " << Color::RESET
+              << "Initializing " << Color::BOLD << grid_receptor_total << Color::RESET
+              << " grid receptors (" << (2*grid_count+1) << "×" << (2*grid_count+1)
+              << ", spacing=" << grid_spacing << "°)" << std::endl;
 
     // Source location (from setting.txt default)
     float source_lat = 37.0f;
     float source_lon = 141.0f;
-
-    std::cout << "[GRID] Source location: (" << source_lat << ", " << source_lon << ")" << std::endl;
-    std::cout << "[GRID] Grid spacing: " << grid_spacing << " degrees" << std::endl;
 
     // Prepare host arrays for receptor locations
     std::vector<float> host_lats(grid_receptor_total);
@@ -833,9 +782,6 @@ void LDM::initializeGridReceptors(int grid_count_param, float grid_spacing_param
         }
     }
 
-    std::cout << "[GRID] Generated " << receptor_idx << " receptor locations" << std::endl;
-    std::cout << "[GRID] Latitude range: [" << host_lats[0] << ", " << host_lats[grid_receptor_total-1] << "]" << std::endl;
-    std::cout << "[GRID] Longitude range: [" << host_lons[0] << ", " << host_lons[grid_receptor_total-1] << "]" << std::endl;
 
     // Allocate GPU memory for receptor data
     cudaMalloc(&d_grid_receptor_lats, grid_receptor_total * sizeof(float));
@@ -852,10 +798,9 @@ void LDM::initializeGridReceptors(int grid_count_param, float grid_spacing_param
     cudaMemset(d_grid_receptor_particle_count, 0, grid_receptor_total * sizeof(int));
 
     // Initialize host storage for observations
-    // Structure: [receptor][time_step]
     grid_receptor_observations.resize(grid_receptor_total);
     grid_receptor_particle_counts.resize(grid_receptor_total);
 
-    std::cout << "[GRID] GPU memory allocated and initialized" << std::endl;
-    std::cout << "[GRID] Grid receptor initialization complete" << std::endl;
+    std::cout << Color::GREEN << "  " << Color::RESET
+              << "Grid receptors initialized" << std::endl;
 }

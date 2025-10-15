@@ -5,6 +5,7 @@
 
 // Standard library includes
 #include <iostream>
+#include <iomanip>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -15,6 +16,7 @@
 #include <algorithm>
 #include <cmath>
 #include <random>
+#include <numeric>
 
 // Physics model global variables (will be loaded from setting.txt)
 int g_num_nuclides;  // Default value, updated from nuclide config
@@ -28,30 +30,26 @@ int main(int argc, char** argv) {
     // Single process mode (MPI removed)
 
     // Clean logs directory and redirect output
-    std::cout << Color::BOLD << Color::CYAN
-              << "=== LDM-EKI: Source Term Inversion with Ensemble Kalman Methods ==="
+    std::cout << "\n" << Color::BOLD << Color::CYAN
+              << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+              << "  LDM-EKI: Source Term Inversion with Ensemble Kalman Methods\n"
+              << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
               << Color::RESET << std::endl;
-    std::cout << "Cleaning previous simulation data..." << std::endl;
 
     // Create necessary directories
-    system("mkdir -p logs");
-    system("mkdir -p output/plot_vtk_prior");
-    system("mkdir -p output/plot_vtk_ens");
-    system("mkdir -p output/results");
-    system("mkdir -p logs/eki_iterations");
+    std::cout << Color::CYAN << "[SYSTEM] " << Color::RESET << "Creating output directories..." << std::flush;
+    system("mkdir -p logs output/plot_vtk_prior output/plot_vtk_ens output/results logs/eki_iterations 2>/dev/null");
+    std::cout << Color::GREEN << " ✓\n" << Color::RESET;
 
     // Use centralized cleanup script for data cleanup
-    std::cout << "Running cleanup script (util/cleanup.py)..." << std::endl;
+    std::cout << Color::CYAN << "[SYSTEM] " << Color::RESET << "Running cleanup script..." << std::endl;
     int cleanup_ret = system("python3 util/cleanup.py");
 
     if (cleanup_ret == 0) {
-        std::cout << Color::GREEN << "Cleanup completed successfully" << Color::RESET << std::endl;
+        std::cout << Color::GREEN << "✓ " << Color::RESET << "Cleanup completed\n" << std::endl;
     } else {
-        std::cout << Color::YELLOW << "Cleanup script returned code " << cleanup_ret << Color::RESET << std::endl;
-        // If user declined cleanup (exit code 0 from aborted script), continue anyway
-        if (cleanup_ret != 0) {
-            std::cout << "Continuing without cleanup..." << std::endl;
-        }
+        std::cout << Color::YELLOW << "Cleanup skipped or failed (code: " << cleanup_ret << ")\n"
+                  << Color::RESET << std::endl;
     }
     
     // Open log file for output redirection
@@ -91,7 +89,8 @@ int main(int argc, char** argv) {
     std::cout.rdbuf(&tee_cout);
     std::cerr.rdbuf(&tee_cerr);
 
-    std::cout << "Log redirection active - output goes to console and logs/ldm_eki_simulation.log" << std::endl;
+    std::cout << Color::CYAN << "[SYSTEM] " << Color::RESET
+              << "Logging to " << Color::BOLD << "logs/ldm_eki_simulation.log" << Color::RESET << "\n" << std::endl;
 
     // Load nuclide configuration
     NuclideConfig* nucConfig = NuclideConfig::getInstance();
@@ -111,35 +110,34 @@ int main(int argc, char** argv) {
     ldm.loadSimulationConfiguration();
 
     // Load EKI settings
-    std::cout << "Loading Ensemble Kalman Inversion settings..." << std::endl;
+    std::cout << "Loading configuration from " << Color::BOLD << "data/eki_settings.txt" << Color::RESET << "..." << std::flush;
     ldm.loadEKISettings();
+    std::cout << Color::GREEN << " ✓\n" << Color::RESET;
 
     // Initialize Memory Doctor if enabled in settings
     extern MemoryDoctor g_memory_doctor;
     g_memory_doctor.setEnabled(ldm.getEKIConfig().memory_doctor_mode);
 
     // Initialize CRAM system with A60.csv matrix
-    std::cout << "Initializing CRAM system..." << std::endl;
+    std::cout << "Initializing CRAM decay system..." << std::flush;
     if (!ldm.initialize_cram_system("./cram/A60.csv")) {
-        std::cerr << Color::RED << "[ERROR] CRAM system initialization failed"
-                  << Color::RESET << std::endl;
+        std::cerr << Color::RED << "\n[ERROR] " << Color::RESET
+                  << "CRAM system initialization failed" << std::endl;
         return 1;
     }
-    std::cout << Color::GREEN << "CRAM system initialization completed"
-              << Color::RESET << std::endl;
+    std::cout << Color::GREEN << " ✓\n" << Color::RESET << std::endl;
 
     ldm.calculateAverageSettlingVelocity();
     ldm.initializeParticlesEKI();
 
     // Preload all meteorological data for EKI mode
-    std::cout << "Preloading meteorological data for fast iterations..." << std::endl;
+    std::cout << "Preloading meteorological data..." << std::flush;
     if (!ldm.preloadAllEKIMeteorologicalData()) {
-        std::cerr << Color::RED << "[ERROR] Failed to preload meteorological data"
-                  << Color::RESET << std::endl;
+        std::cerr << Color::RED << "\n[ERROR] " << Color::RESET
+                  << "Failed to preload meteorological data" << std::endl;
         return 1;
     }
-    std::cout << Color::GREEN << "All meteorological data preloaded successfully"
-              << Color::RESET << std::endl;
+    std::cout << Color::GREEN << " ✓\n" << Color::RESET << std::endl;
 
     ldm.allocateGPUMemory();
 
@@ -255,27 +253,28 @@ int main(int argc, char** argv) {
         // Wait for ensemble states from Python
         // ========================================================================
         std::cout << "\n" << Color::BOLD << Color::CYAN
-                  << "========================================"
+                  << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                  << "  ITERATION " << current_iteration << "/" << max_iterations << "\n"
+                  << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                   << Color::RESET << std::endl;
-        std::cout << Color::BOLD << "ITERATION " << current_iteration << " - Waiting for ensemble states from Python..."
-                  << Color::RESET << std::endl;
-        std::cout << Color::BOLD << Color::CYAN
-                  << "========================================"
-                  << Color::RESET << "\n" << std::endl;
+
+        std::cout << Color::BLUE << "[IPC] " << Color::RESET
+                  << "Waiting for ensemble states from Python (timeout: 60s)..." << std::flush;
 
         if (!eki_reader.waitForEnsembleData(60)) {  // 60 second timeout
             if (current_iteration == 1) {
-                std::cerr << Color::RED << "[ERROR] Timeout waiting for initial ensemble data from Python"
-                          << Color::RESET << std::endl;
-                std::cerr << Color::RED << "[ERROR] Python may have crashed or failed to send data"
-                          << Color::RESET << std::endl;
+                std::cerr << Color::RED << "\n[ERROR] " << Color::RESET
+                          << "Timeout waiting for initial ensemble data\n";
+                std::cerr << "  Python process may have crashed\n";
+                std::cerr << "  Check logs/python_eki_output.log for details" << std::endl;
             } else {
-                std::cout << Color::GREEN << "No more ensemble data received - Python has completed all iterations"
-                          << Color::RESET << std::endl;
+                std::cout << Color::GREEN << "\n✓ " << Color::RESET
+                          << "Python completed all iterations" << std::endl;
                 continue_iterations = false;
             }
             break;
         }
+        std::cout << Color::GREEN << " ✓\n" << Color::RESET;
 
         // Read ensemble states
         std::vector<float> ensemble_data;
@@ -288,25 +287,20 @@ int main(int argc, char** argv) {
             break;
         }
 
-        // ========================================================================
-        // Display received ensemble data
-        // ========================================================================
-        std::cout << "\nEnsemble states received from Python" << std::endl;
-        std::cout << "Matrix dimensions: " << num_states << " states × "
-                  << num_ensemble << " ensemble members" << std::endl;
-
         // Calculate statistics
         float min_val = *std::min_element(ensemble_data.begin(), ensemble_data.end());
         float max_val = *std::max_element(ensemble_data.begin(), ensemble_data.end());
         float sum = std::accumulate(ensemble_data.begin(), ensemble_data.end(), 0.0f);
         float mean_val = sum / ensemble_data.size();
 
-        std::cout << "Data statistics:" << std::endl;
-        std::cout << "  Min:  " << std::scientific << min_val << std::endl;
-        std::cout << "  Max:  " << max_val << std::endl;
-        std::cout << "  Mean: " << mean_val << std::endl;
+        std::cout << Color::BOLD << "\nEnsemble State Summary\n" << Color::RESET;
+        std::cout << "  Dimensions    : " << num_states << " states × " << num_ensemble << " members\n";
+        std::cout << "  Min value     : " << std::scientific << std::setprecision(2) << min_val << "\n";
+        std::cout << "  Max value     : " << max_val << "\n";
+        std::cout << "  Mean value    : " << mean_val << std::endl;
 
-        // DEBUG: Count zeros and negative values for ALL iterations
+#ifdef DEBUG
+        // Count zeros and negative values for validation
         int zero_count = 0;
         int negative_count = 0;
         int tiny_count = 0;  // Values < 1e6
@@ -316,22 +310,24 @@ int main(int argc, char** argv) {
             if (val > 0.0f && val < 1.0e6f) tiny_count++;
         }
 
-        std::cout << "[DEBUG_ITER" << current_iteration << "] Value analysis:" << std::endl;
-        std::cout << "  - Zero values: " << zero_count << " / " << ensemble_data.size()
+        std::cout << Color::YELLOW << "[DEBUG] " << Color::RESET << "Value analysis:" << std::endl;
+        std::cout << "  Zero values: " << zero_count << " / " << ensemble_data.size()
                   << " (" << (100.0f * zero_count / ensemble_data.size()) << "%)" << std::endl;
-        std::cout << "  - Negative values: " << negative_count << std::endl;
-        std::cout << "  - Tiny values (<1e6): " << tiny_count << std::endl;
+        std::cout << "  Negative values: " << negative_count << std::endl;
+        std::cout << "  Tiny values (<1e6): " << tiny_count << std::endl;
 
         // Highlight if negatives are received
         if (negative_count > 0) {
-            std::cout << Color::RED << "\n  WARNING: Negative values detected in iteration "
+            std::cout << Color::RED << "  Negative values detected in iteration "
                       << current_iteration << Color::RESET << std::endl;
         } else {
-            std::cout << Color::GREEN << "\n  All values non-negative in iteration "
-                      << current_iteration << Color::RESET << std::endl;
+            std::cout << Color::GREEN << "  ✓ All values non-negative\n"
+                      << Color::RESET;
         }
+#endif
 
-        // DEBUG: Save what LDM receives for comparison
+#ifdef DEBUG_VERBOSE
+        // Save what LDM receives for comparison
         {
             std::string debug_filename = "/tmp/eki_debug/ldm_receives_iter_" + std::to_string(current_iteration) + ".txt";
             std::ofstream debug_file(debug_filename);
@@ -346,37 +342,44 @@ int main(int argc, char** argv) {
                 }
                 debug_file << "\n";
                 debug_file.close();
-                std::cout << "[DEBUG] Saved received data info to " << debug_filename << std::endl;
+                std::cout << Color::YELLOW << "[DEBUG] " << Color::RESET
+                          << "Saved data to " << debug_filename << std::endl;
             }
         }
 
         // Compare with previous iteration if available
         static float prev_min = 0.0f, prev_max = 0.0f, prev_mean = 0.0f;
         if (current_iteration > 1) {
-            std::cout << "[DEBUG_ITER" << current_iteration << "] Change from previous iteration:" << std::endl;
-            std::cout << "  - Min change: " << ((min_val - prev_min) / prev_min * 100.0f) << "%" << std::endl;
-            std::cout << "  - Max change: " << ((max_val - prev_max) / prev_max * 100.0f) << "%" << std::endl;
-            std::cout << "  - Mean change: " << ((mean_val - prev_mean) / prev_mean * 100.0f) << "%" << std::endl;
+            std::cout << Color::YELLOW << "[DEBUG] " << Color::RESET << "Change from iteration "
+                      << (current_iteration - 1) << ":" << std::endl;
+            std::cout << "  Min:  " << ((min_val - prev_min) / prev_min * 100.0f) << "%" << std::endl;
+            std::cout << "  Max:  " << ((max_val - prev_max) / prev_max * 100.0f) << "%" << std::endl;
+            std::cout << "  Mean: " << ((mean_val - prev_mean) / prev_mean * 100.0f) << "%" << std::endl;
         }
         prev_min = min_val;
         prev_max = max_val;
         prev_mean = mean_val;
+#endif
 
-        // Only display detailed data for first iteration
+#ifdef DEBUG_VERBOSE
+        // Display detailed data for first iteration only
         if (current_iteration == 1) {
-            std::cout << "\nSample data (first state, first 20 ensemble members):" << std::endl;
+            std::cout << Color::YELLOW << "\n[DEBUG] " << Color::RESET
+                      << "Sample data (first state, first 20 ensemble members):" << std::endl;
             int display_count = std::min(20, num_ensemble);
             for (int i = 0; i < display_count; i++) {
                 std::cout << "  [state 0, ensemble " << i << "] = " << ensemble_data[i] << std::endl;
             }
 
-            std::cout << "\nSample data (first ensemble member, first 10 states):" << std::endl;
+            std::cout << Color::YELLOW << "\n[DEBUG] " << Color::RESET
+                      << "Sample data (first ensemble member, first 10 states):" << std::endl;
             int state_display = std::min(10, num_states);
             for (int s = 0; s < state_display; s++) {
                 std::cout << "  [state " << s << ", ensemble 0] = "
                           << ensemble_data[s * num_ensemble] << std::endl;
             }
         }
+#endif
 
         // ========================================================================
         // Ensemble Mode: Initialize particles with ensemble states
@@ -395,14 +398,16 @@ int main(int argc, char** argv) {
             }
         }
 
-        // DEBUG: Check for zero values in ensemble matrix - CHECK ALL ENSEMBLES (first iteration only)
+#ifdef DEBUG_VERBOSE
+        // Check for zero values in ensemble matrix (first iteration only)
         if (current_iteration == 1) {
             int zero_count = 0;
             int nonzero_count = 0;
             float min_val = 1e20f, max_val = -1e20f;
             std::vector<std::string> zero_locations;
 
-            std::cout << "[DEBUG_FULL_MATRIX] Checking ALL " << num_ensemble << " ensembles × " << num_states << " states..." << std::endl;
+            std::cout << Color::YELLOW << "[DEBUG] " << Color::RESET
+                      << "Checking full matrix: " << num_ensemble << " × " << num_states << "..." << std::endl;
 
             for (int e = 0; e < num_ensemble; e++) {
                 for (int s = 0; s < num_states; s++) {
@@ -420,45 +425,24 @@ int main(int argc, char** argv) {
                 }
             }
 
-            std::cout << "[DEBUG_FULL_MATRIX] RESULTS FOR ENTIRE MATRIX:" << std::endl;
-            std::cout << "[DEBUG_FULL_MATRIX]   Total values: " << (num_ensemble * num_states) << std::endl;
-            std::cout << "[DEBUG_FULL_MATRIX]   Zero values: " << zero_count
+            std::cout << "  Total values: " << (num_ensemble * num_states) << std::endl;
+            std::cout << "  Zero values: " << zero_count
                       << " (" << (100.0f * zero_count / (num_ensemble * num_states)) << "%)" << std::endl;
-            std::cout << "[DEBUG_FULL_MATRIX]   Non-zero values: " << nonzero_count << std::endl;
+            std::cout << "  Non-zero values: " << nonzero_count << std::endl;
 
             if (nonzero_count > 0) {
-                std::cout << "[DEBUG_FULL_MATRIX]   Min (non-zero): " << min_val << std::endl;
-                std::cout << "[DEBUG_FULL_MATRIX]   Max: " << max_val << std::endl;
+                std::cout << "  Min (non-zero): " << min_val << std::endl;
+                std::cout << "  Max: " << max_val << std::endl;
             }
 
             if (zero_count > 0) {
-                std::cout << Color::YELLOW << "[DEBUG_FULL_MATRIX]   WARNING: Zero values detected in ensemble matrix!"
+                std::cout << Color::YELLOW << "  Zero values detected in ensemble matrix!"
                           << Color::RESET << std::endl;
-                std::cout << "[DEBUG_FULL_MATRIX]   First 50 zero locations:" << std::endl;
-                int count = 0;
-                for (const auto& loc : zero_locations) {
-                    std::cout << loc << " ";
-                    if (++count % 10 == 0) std::cout << std::endl << "                                      ";
-                }
-                std::cout << std::endl;
-
-                // Check which states have zeros across ensembles
-                std::cout << "[DEBUG_FULL_MATRIX]   Checking which states have zeros:" << std::endl;
-                for (int s = 0; s < num_states; s++) {
-                    int state_zeros = 0;
-                    for (int e = 0; e < num_ensemble; e++) {
-                        if (ensemble_matrix[e * num_states + s] == 0.0f) {
-                            state_zeros++;
-                        }
-                    }
-                    if (state_zeros > 0) {
-                        std::cout << "[DEBUG_FULL_MATRIX]     State " << s << ": " << state_zeros << " zeros out of " << num_ensemble << " ensembles" << std::endl;
-                    }
-                }
             } else {
-                std::cout << "[DEBUG_FULL_MATRIX]   ✓ NO ZEROS FOUND - All values are non-zero!" << std::endl;
+                std::cout << Color::GREEN << "  ✓ All values non-zero\n" << Color::RESET;
             }
         }
+#endif
 
         // Set ensemble mode flags (only on first iteration)
         if (current_iteration == 1) {
@@ -494,49 +478,34 @@ int main(int argc, char** argv) {
         // Initialize particles for all ensembles with new states
         ldm.initializeParticlesEKI_AllEnsembles(ensemble_matrix.data(), num_ensemble, num_states);
 
-        // DEBUG: Check concentrations array after initialization (ALL iterations)
-        // if (current_iteration == 1) {  // Commented out to check ALL iterations
-            std::cout << "[DEBUG_ITER" << current_iteration << "] Checking concentrations[] after CPU initialization..." << std::endl;
-            int check_count = 0;
-            int particle_zero_count = 0;
-            int particle_nonzero_count = 0;
-            for (size_t i = 0; i < std::min(size_t(1000), ldm.part.size()); i++) {
-                float total_conc = 0.0f;
-                for (int nuc = 0; nuc < 60; nuc++) {
-                    total_conc += ldm.part[i].concentrations[nuc];
-                }
-                if (total_conc == 0.0f) {
-                    particle_zero_count++;
-                } else {
-                    particle_nonzero_count++;
-                }
-                if (check_count < 5) {
-                    std::cout << "[DEBUG] Particle " << i << " (ens=" << ldm.part[i].ensemble_id
-                              << ", timeidx=" << ldm.part[i].timeidx
-                              << "): conc=" << ldm.part[i].conc
-                              << ", sum(concentrations)=" << total_conc
-                              << ", concentrations[0]=" << ldm.part[i].concentrations[0] << std::endl;
-                    check_count++;
-                }
+#ifdef DEBUG_VERBOSE
+        // Check concentrations array after initialization
+        std::cout << Color::YELLOW << "[DEBUG] " << Color::RESET
+                  << "Checking particle concentrations after initialization..." << std::endl;
+        int check_count = 0;
+        int particle_zero_count = 0;
+        int particle_nonzero_count = 0;
+        for (size_t i = 0; i < std::min(size_t(1000), ldm.part.size()); i++) {
+            float total_conc = 0.0f;
+            for (int nuc = 0; nuc < 60; nuc++) {
+                total_conc += ldm.part[i].concentrations[nuc];
             }
-            std::cout << "[DEBUG_ITER" << current_iteration << "] First 1000 particles: " << particle_nonzero_count << " non-zero, "
-                      << particle_zero_count << " zero concentrations" << std::endl;
-
-            // DEBUG: Check Block 4 particles (indices 832-1040) that appear as zero in VTK
-            std::cout << "[DEBUG_BLOCK4] Checking particles 832-841 (should be timeidx 4):" << std::endl;
-            for (int i = 832; i <= 841 && i < ldm.part.size(); i++) {
-                float total_conc = 0.0f;
-                for (int nuc = 0; nuc < 60; nuc++) {
-                    total_conc += ldm.part[i].concentrations[nuc];
-                }
-                std::cout << "[DEBUG_BLOCK4] Particle " << i
-                          << ": ens=" << ldm.part[i].ensemble_id
+            if (total_conc == 0.0f) {
+                particle_zero_count++;
+            } else {
+                particle_nonzero_count++;
+            }
+            if (check_count < 5) {
+                std::cout << "  Particle " << i << " (ens=" << ldm.part[i].ensemble_id
                           << ", timeidx=" << ldm.part[i].timeidx
-                          << ", flag=" << ldm.part[i].flag
-                          << ", conc=" << ldm.part[i].conc
+                          << "): conc=" << ldm.part[i].conc
                           << ", sum=" << total_conc << std::endl;
+                check_count++;
             }
-        // }  // End of if (current_iteration == 1) - Commented out to check ALL iterations
+        }
+        std::cout << "  First 1000 particles: " << particle_nonzero_count << " non-zero, "
+                  << particle_zero_count << " zero concentrations" << std::endl;
+#endif
 
         // Verify particle count after initialization
         if (current_iteration == 1) {
@@ -622,49 +591,53 @@ int main(int argc, char** argv) {
             break;
         }
 
-    std::cout << Color::GREEN << "[ENSEMBLE] Successfully sent " << total_obs_elements
-              << " observation values to shared memory" << Color::RESET << std::endl;
-    std::cout << "[ENSEMBLE] Shape: [" << num_ensemble << " × "
-              << eki_config.num_receptors << " × " << num_timesteps << "]" << std::endl;
+    std::cout << Color::BLUE << "[IPC] " << Color::RESET << "Sent observations to Python: "
+              << Color::BOLD << "[" << num_ensemble << " × " << eki_config.num_receptors
+              << " × " << num_timesteps << "]" << Color::RESET
+              << " (" << total_obs_elements << " values)" << std::endl;
 
-    std::cout << Color::BOLD << Color::GREEN << "Iteration " << current_iteration << " completed"
-              << Color::RESET << "\n" << std::endl;
+    std::cout << "\n" << Color::BOLD << Color::GREEN << "✓ Iteration " << current_iteration
+              << "/" << max_iterations << " completed" << Color::RESET << "\n" << std::endl;
 
     } // End of iteration loop
 
     // ========================================================================
     // Cleanup (after all iterations)
     // ========================================================================
-    std::cout << Color::BOLD << Color::CYAN
-              << "\nAll iterations completed. Cleaning up resources..."
-              << Color::RESET << std::endl;
-    std::cout << Color::GREEN << "Total iterations processed: " << current_iteration
-              << Color::RESET << std::endl;
+    std::cout << "\n" << Color::BOLD << Color::CYAN
+              << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+              << "  CLEANUP\n"
+              << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+              << Color::RESET;
+
+    std::cout << Color::GREEN << "✓ " << Color::RESET
+              << "Completed " << Color::BOLD << current_iteration << Color::RESET
+              << " iterations\n" << std::endl;
 
     // Cleanup EKI observation system
+    std::cout << Color::CYAN << "[SYSTEM] " << Color::RESET << "Releasing resources..." << std::flush;
     ldm.cleanupEKIObservationSystem();
-
-    // Cleanup meteorological data memory
-    std::cout << "Cleaning up meteorological data memory..." << std::endl;
     ldm.cleanupEKIMeteorologicalData();
 
     // Cleanup shared memory
     eki_writer.cleanup();
     LDM_EKI_IPC::EKIWriter::unlinkSharedMemory();
     LDM_EKI_IPC::EKIReader::unlinkEnsembleSharedMemory();
+    std::cout << Color::GREEN << " ✓\n" << Color::RESET;
 
     // Restore original stream buffers
     std::cout.rdbuf(coutbuf);
     std::cerr.rdbuf(cerrbuf);
     logFile.close();
 
-    std::cout << Color::GREEN << "Simulation completed. All output saved to logs/ldm_eki_simulation.log"
-              << Color::RESET << std::endl;
+    std::cout << "\n" << Color::GREEN << Color::BOLD << "✓ Simulation completed" << Color::RESET << std::endl;
+    std::cout << "  Logs: " << Color::BOLD << "logs/ldm_eki_simulation.log" << Color::RESET << std::endl;
 
     // ========================================================================
     // Automatic Post-Processing: Generate Visualization
     // ========================================================================
-    std::cout << "\n[VISUALIZATION] Generating comparison graphs..." << std::endl;
+    std::cout << "\n" << Color::CYAN << "[VISUALIZATION] " << Color::RESET
+              << "Generating comparison graphs..." << std::flush;
 
     // Check if visualization script exists
     std::ifstream viz_script("util/compare_all_receptors.py");
@@ -674,18 +647,18 @@ int main(int argc, char** argv) {
         int viz_ret = system("python3 util/compare_all_receptors.py > /tmp/ldm_viz.log 2>&1");
 
         if (viz_ret == 0) {
-            std::cout << Color::GREEN << "[VISUALIZATION] Successfully generated: output/results/all_receptors_comparison.png"
-                      << Color::RESET << std::endl;
+            std::cout << Color::GREEN << " ✓\n" << Color::RESET;
+            std::cout << "  Output: " << Color::BOLD
+                      << "output/results/all_receptors_comparison.png" << Color::RESET << std::endl;
         } else {
-            std::cout << Color::YELLOW << "[VISUALIZATION] Visualization script failed (exit code: " << viz_ret << ")"
-                      << Color::RESET << std::endl;
-            std::cout << "[VISUALIZATION] Check /tmp/ldm_viz.log for details" << std::endl;
-            std::cout << "[VISUALIZATION] You can manually run: python3 util/compare_all_receptors.py" << std::endl;
+            std::cout << Color::RED << " failed\n" << Color::RESET;
+            std::cout << Color::YELLOW << "  Visualization failed (code: " << viz_ret << ")\n"
+                      << Color::RESET;
+            std::cout << "  Check /tmp/ldm_viz.log for details\n";
+            std::cout << "  Run manually: python3 util/compare_all_receptors.py" << std::endl;
         }
     } else {
-        std::cout << Color::YELLOW << "[VISUALIZATION] Script not found: util/compare_all_receptors.py"
-                  << Color::RESET << std::endl;
-        std::cout << "[VISUALIZATION] Skipping automatic visualization" << std::endl;
+        std::cout << Color::YELLOW << " skipped (script not found)\n" << Color::RESET;
     }
 
     return 0;

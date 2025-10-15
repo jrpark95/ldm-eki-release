@@ -14,6 +14,7 @@
 #include <numeric>
 #include <algorithm>
 #include "memory_doctor.cuh"
+#include "colors.h"
 
 // Global memory doctor instance
 MemoryDoctor g_memory_doctor;
@@ -209,15 +210,16 @@ public:
         header->cols = num_timesteps;
 
         initialized = true;
-        std::cout << "EKI IPC Writer initialized (Full Config):" << std::endl;
-        std::cout << "  - " << eki_config.ensemble_size << " ensembles, "
-                  << eki_config.num_receptors << " receptors, "
-                  << num_timesteps << " timesteps" << std::endl;
-        std::cout << "  - Iteration: " << eki_config.iteration
-                  << ", Regularization: " << eki_config.regularization << std::endl;
-        std::cout << "  - GPU: " << eki_config.num_gpu << " devices"
-                  << ", Forward: " << eki_config.gpu_forward
-                  << ", Inverse: " << eki_config.gpu_inverse << std::endl;
+        std::cout << Color::BLUE << "[IPC] " << Color::RESET
+                  << "Writer initialized with full configuration\n";
+        std::cout << "  Ensembles      : " << Color::BOLD << eki_config.ensemble_size << Color::RESET << "\n";
+        std::cout << "  Receptors      : " << Color::BOLD << eki_config.num_receptors << Color::RESET << "\n";
+        std::cout << "  Timesteps      : " << Color::BOLD << num_timesteps << Color::RESET << "\n";
+        std::cout << "  Iteration      : " << eki_config.iteration << "\n";
+        std::cout << "  Regularization : " << eki_config.regularization << "\n";
+        std::cout << "  GPU devices    : " << eki_config.num_gpu
+                  << " (Forward: " << eki_config.gpu_forward
+                  << ", Inverse: " << eki_config.gpu_inverse << ")\n";
         return true;
     }
 
@@ -256,8 +258,9 @@ public:
         // Set ready status
         header->status = 1;
 
-        std::cout << "EKI observations written: " << rows << "x" << cols
-                  << " matrix (" << rows * cols * sizeof(float) << " bytes)" << std::endl;
+        std::cout << Color::BLUE << "[IPC] " << Color::RESET
+                  << "Observations written: " << Color::BOLD << rows << "×" << cols << Color::RESET
+                  << " matrix (" << (rows * cols * sizeof(float)) / 1024.0 << " KB)\n";
         return true;
     }
 
@@ -334,10 +337,11 @@ public:
         munmap(ens_obs_config_map, sizeof(EKIConfigBasic));
         close(ens_obs_config_fd);
 
-        std::cout << "Ensemble observation config initialized: "
-                  << ensemble_size << " ensembles, "
-                  << num_receptors << " receptors, "
-                  << num_timesteps << " timesteps" << std::endl;
+        std::cout << Color::BLUE << "[IPC] " << Color::RESET
+                  << "Ensemble observation config: "
+                  << Color::BOLD << ensemble_size << Color::RESET << " ensembles, "
+                  << Color::BOLD << num_receptors << Color::RESET << " receptors, "
+                  << Color::BOLD << num_timesteps << Color::RESET << " timesteps\n";
 
         return true;
     }
@@ -390,10 +394,10 @@ public:
             sum_val += val;
         }
 
-        std::cout << "Ensemble observations written to shared memory:" << std::endl;
-        std::cout << "  Size: " << ens_obs_data_size << " bytes" << std::endl;
-        std::cout << "  Shape: [" << ensemble_size << " × " << num_receptors << " × " << num_timesteps << "]" << std::endl;
-        std::cout << "  Min: " << min_val << ", Max: " << max_val << ", Mean: " << (sum_val / total_elements) << std::endl;
+        std::cout << Color::BLUE << "[IPC] " << Color::RESET
+                  << "Ensemble observations written (" << Color::BOLD << ens_obs_data_size / 1024.0 << " KB" << Color::RESET << ")\n";
+        std::cout << "  Shape : [" << ensemble_size << " × " << num_receptors << " × " << num_timesteps << "]\n";
+        std::cout << "  Range : [" << min_val << ", " << max_val << "], mean=" << (sum_val / total_elements) << "\n";
 
         // Memory Doctor: Log sent ensemble observations with iteration
         if (g_memory_doctor.isEnabled()) {
@@ -417,7 +421,8 @@ public:
         // Don't unlink ensemble observation files - Python needs them!
         // shm_unlink(SHM_ENSEMBLE_OBS_CONFIG_NAME);
         // shm_unlink(SHM_ENSEMBLE_OBS_DATA_NAME);
-        std::cout << "EKI shared memory unlinked (kept ensemble obs for Python)" << std::endl;
+        std::cout << Color::BLUE << "[IPC] " << Color::RESET
+                  << "Shared memory unlinked (ensemble obs kept for Python)\n";
     }
 };
 
@@ -463,8 +468,9 @@ public:
 
     // Wait for ensemble data to be ready
     bool waitForEnsembleData(int timeout_seconds = 60, int expected_iteration = -1) {
-        std::cout << "Waiting for ensemble data from Python (timeout: "
-                  << timeout_seconds << "s)..." << std::endl;
+        std::cout << Color::BLUE << "[IPC] " << Color::RESET
+                  << "Waiting for ensemble data from Python (timeout: "
+                  << Color::BOLD << timeout_seconds << "s" << Color::RESET << ")...\n";
 
         const char* config_path = "/dev/shm/ldm_eki_ensemble_config";
         const char* data_path = "/dev/shm/ldm_eki_ensemble_data";
@@ -493,8 +499,9 @@ public:
                                 close(test_fd);
 
                                 if (bytes_read == sizeof(header) && header.status == 1) {
-                                    std::cout << "Fresh ensemble data detected! Iteration ID: "
-                                              << config.timestep_id << " (previous: " << last_iteration_id << ")" << std::endl;
+                                    std::cout << Color::GREEN << "✓ " << Color::RESET
+                                              << "Fresh ensemble data detected (iteration " << Color::BOLD
+                                              << config.timestep_id << Color::RESET << ")\n";
                                     last_iteration_id = config.timestep_id;
                                     return true;
                                 }
@@ -502,8 +509,7 @@ public:
                         } else if (config.timestep_id == last_iteration_id && i > 5) {
                             // Same iteration ID after 5 seconds - probably stale data
                             if (i % 5 == 0) {
-                                std::cout << "Waiting for new data... (current iteration ID: "
-                                          << config.timestep_id << ")" << std::endl;
+                                std::cout << "\rWaiting for new data... (iteration " << config.timestep_id << ")" << std::flush;
                             }
                         }
                     }
@@ -512,7 +518,8 @@ public:
             sleep(1);
         }
 
-        std::cerr << "[ERROR] Timeout waiting for ensemble data" << std::endl;
+        std::cerr << Color::RED << Color::BOLD << "[ERROR] " << Color::RESET
+                  << "Timeout waiting for ensemble data\n";
         return false;
     }
 
@@ -540,8 +547,9 @@ public:
         num_ensemble = config.num_ensemble;
         timestep_id = config.timestep_id;
 
-        std::cout << "Config loaded: " << num_states << " states × "
-                  << num_ensemble << " ensemble (timestep " << timestep_id << ")" << std::endl;
+        std::cout << Color::BLUE << "[IPC] " << Color::RESET
+                  << "Config loaded: " << Color::BOLD << num_states << "×" << num_ensemble << Color::RESET
+                  << " (timestep " << timestep_id << ")\n";
         return true;
     }
 
@@ -621,17 +629,16 @@ public:
         output.resize(data_count);
         std::memcpy(output.data(), data_ptr, data_count * sizeof(float));
 
-        std::cout << "Ensemble states loaded: " << num_states << "×" << num_ensemble
-                  << " matrix (" << data_count * sizeof(float) << " bytes)" << std::endl;
-
         // Calculate statistics
         float min_val = *std::min_element(output.begin(), output.end());
         float max_val = *std::max_element(output.begin(), output.end());
         float sum = std::accumulate(output.begin(), output.end(), 0.0f);
         float mean_val = sum / data_count;
 
-        std::cout << "Data range: [" << min_val << ", " << max_val
-                  << "], mean: " << mean_val << std::endl;
+        std::cout << Color::BLUE << "[IPC] " << Color::RESET
+                  << "Ensemble states loaded: " << Color::BOLD << num_states << "×" << num_ensemble << Color::RESET
+                  << " (" << data_count * sizeof(float) / 1024.0 << " KB)\n";
+        std::cout << "  Range : [" << min_val << ", " << max_val << "], mean=" << mean_val << "\n";
 
         // Memory Doctor: Log received ensemble states with iteration from timestep_id
         if (g_memory_doctor.isEnabled()) {
@@ -674,7 +681,8 @@ public:
     static void unlinkEnsembleSharedMemory() {
         shm_unlink(SHM_ENSEMBLE_CONFIG_NAME);
         shm_unlink(SHM_ENSEMBLE_DATA_NAME);
-        std::cout << "Ensemble shared memory unlinked" << std::endl;
+        std::cout << Color::BLUE << "[IPC] " << Color::RESET
+                  << "Ensemble shared memory unlinked\n";
     }
 };
 

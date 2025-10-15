@@ -57,7 +57,8 @@ void LDM::allocateGPUMemory(){
             return;
         }
 
-        std::cout << "[GPU_ALLOC] Allocating GPU memory for " << part.size() << " particles" << std::endl;
+        std::cout << Color::CYAN << "[GPU] " << Color::RESET << "Allocating memory for "
+                  << Color::BOLD << part.size() << Color::RESET << " particles" << std::endl;
 
         size_t total_size = part.size() * sizeof(LDMpart);
 
@@ -78,57 +79,33 @@ void LDM::allocateGPUMemory(){
             exit(EXIT_FAILURE);
         }
 
-        // CRITICAL DEBUG: Verify GPU data immediately after copy
-        // Check if concentrations are preserved during GPU transfer
-        std::cout << "[GPU_VERIFY] Verifying GPU data immediately after cudaMemcpy..." << std::endl;
+#ifdef DEBUG_VERBOSE
+        // Verify GPU data immediately after copy
+        std::cout << Color::YELLOW << "[DEBUG] " << Color::RESET << "Verifying GPU data transfer..." << std::endl;
 
-        // Sample first 3 particles for verification
         int verify_count = std::min(3, (int)part.size());
         std::vector<LDMpart> gpu_verify(verify_count);
 
         err = cudaMemcpy(gpu_verify.data(), d_part, verify_count * sizeof(LDMpart), cudaMemcpyDeviceToHost);
-        if (err != cudaSuccess) {
-            std::cerr << "[GPU_VERIFY] Failed to read back GPU data: " << cudaGetErrorString(err) << std::endl;
-        } else {
-            std::cout << "[GPU_VERIFY] Comparing CPU vs GPU data for first " << verify_count << " particles:" << std::endl;
+        if (err == cudaSuccess) {
             for (int i = 0; i < verify_count; i++) {
                 const LDMpart& cpu_p = part[i];
                 const LDMpart& gpu_p = gpu_verify[i];
 
-                std::cout << "[GPU_VERIFY] Particle " << i << ":" << std::endl;
-                std::cout << "  CPU: ens=" << cpu_p.ensemble_id << ", timeidx=" << cpu_p.timeidx
-                         << ", flag=" << cpu_p.flag << ", conc=" << cpu_p.conc << std::endl;
-                std::cout << "  GPU: ens=" << gpu_p.ensemble_id << ", timeidx=" << gpu_p.timeidx
-                         << ", flag=" << gpu_p.flag << ", conc=" << gpu_p.conc << std::endl;
-
-                // Check concentrations array
-                float cpu_sum = 0.0f, gpu_sum = 0.0f;
-                for (int nuc = 0; nuc < 3; nuc++) {  // Check first 3 nuclides
-                    cpu_sum += cpu_p.concentrations[nuc];
-                    gpu_sum += gpu_p.concentrations[nuc];
-                }
-                std::cout << "  CPU conc[0]=" << cpu_p.concentrations[0] << ", sum(first 3)=" << cpu_sum << std::endl;
-                std::cout << "  GPU conc[0]=" << gpu_p.concentrations[0] << ", sum(first 3)=" << gpu_sum << std::endl;
-
-                // Check if data matches
                 if (std::abs(cpu_p.conc - gpu_p.conc) > 1e-3f) {
-                    std::cerr << "[GPU_VERIFY] MISMATCH: conc field differs!" << std::endl;
-                }
-                if (std::abs(cpu_p.concentrations[0] - gpu_p.concentrations[0]) > 1e-3f) {
-                    std::cerr << "[GPU_VERIFY] MISMATCH: concentrations[0] differs!" << std::endl;
+                    std::cerr << Color::RED << "[ERROR] " << Color::RESET
+                              << "GPU transfer mismatch at particle " << i << std::endl;
                 }
             }
+            std::cout << Color::GREEN << "  ✓ GPU transfer verified\n" << Color::RESET;
         }
+#endif
 
-        // Clear any previous CUDA errors before checking
         cudaGetLastError(); // Clear previous errors
-        err = cudaGetLastError(); // Should now be cudaSuccess
+        err = cudaGetLastError();
         if (err != cudaSuccess) {
-            std::cerr << "[ERROR] CUDA error still present after particle memory copy: " << cudaGetErrorString(err) << std::endl;
-            std::cerr << "[ERROR] This indicates a problem with earlier CUDA operations" << std::endl;
-            std::cerr << "[ERROR] This may cause NaN values in meteorological data interpolation" << std::endl;
-        } else {
-            std::cout << "[DEBUG] Particle memory copy successful, no CUDA errors detected" << std::endl;
+            std::cerr << Color::RED << "[ERROR] " << Color::RESET
+                      << "CUDA error after memory copy: " << cudaGetErrorString(err) << std::endl;
         }
     }
 
@@ -297,20 +274,21 @@ void LDM::runSimulation_eki(){
     float t0 = 0.0;
     float totalElapsedTime = 0.0;
 
-    // Debug: Display simulation mode and particle configuration
-    std::cout << "\n========================================" << std::endl;
+    // Display simulation mode and particle configuration
+    std::cout << "\n" << Color::BOLD << Color::CYAN
+              << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+              << "  SIMULATION CONFIGURATION\n"
+              << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+              << Color::RESET;
     if (is_ensemble_mode) {
-        std::cout << "[EKI_SIM] Running in ENSEMBLE mode" << std::endl;
-        std::cout << "[EKI_SIM] Total particles: " << part.size()
-                  << " (" << ensemble_size << " ensembles × " << ensemble_num_states
-                  << " states)" << std::endl;
+        std::cout << "  Mode           : " << Color::MAGENTA << "ENSEMBLE" << Color::RESET << std::endl;
+        std::cout << "  Particles      : " << Color::BOLD << part.size() << Color::RESET
+                  << " (" << ensemble_size << " × " << ensemble_num_states << " states)" << std::endl;
     } else {
-        std::cout << "[EKI_SIM] Running in SINGLE mode" << std::endl;
-        std::cout << "[EKI_SIM] Total particles: " << part.size() << std::endl;
+        std::cout << "  Mode           : SINGLE" << std::endl;
+        std::cout << "  Particles      : " << Color::BOLD << part.size() << Color::RESET << std::endl;
     }
-    std::cout << "[EKI_SIM] GPU kernel configuration: " << blocks << " blocks × "
-              << threadsPerBlock << " threads" << std::endl;
-    std::cout << "========================================\n" << std::endl;
+    std::cout << "  GPU config     : " << blocks << " blocks × " << threadsPerBlock << " threads\n" << std::endl;
 
     GridConfig grid_config = loadGridConfig();
     float start_lat = grid_config.start_lat;
@@ -354,8 +332,10 @@ void LDM::runSimulation_eki(){
     }
     std::cout << "EKI simulation starting - using preloaded meteorological data" << std::endl;
 
+#ifdef DEBUG
     // === NaN check 4: Before simulation start ===
     checkParticleNaN("Before simulation start");
+#endif
 
     //log_first_particle_concentrations(0, 0.0f);
 
@@ -392,14 +372,16 @@ void LDM::runSimulation_eki(){
             // Update height data as well
             flex_hgt = g_eki_meteo.host_flex_hgt_data[past_meteo_index];
             
+#ifdef DEBUG
             // Verify height data at first timestep only
             if (timestep == 0) {
-                printf("[DEBUG_HGT_UPDATE] Timestep %d: Index %d height data first 5 values: ", timestep, past_meteo_index);
+                printf("[DEBUG] Timestep %d: Index %d height data first 5 values: ", timestep, past_meteo_index);
                 for (int i = 0; i < std::min(5, (int)flex_hgt.size()); i++) {
                     printf("%.1f ", flex_hgt[i]);
                 }
                 printf("... %.1f\n", flex_hgt[flex_hgt.size()-1]);
             }
+#endif
             
             // CRITICAL FIX: Copy height data to GPU constant memory
             cudaError_t hgt_err = cudaMemcpyToSymbol(d_flex_hgt, flex_hgt.data(), sizeof(float) * dimZ_GFS);
@@ -440,14 +422,16 @@ void LDM::runSimulation_eki(){
             }
         }
 
+#ifdef DEBUG
         // === Detailed NaN check at first timestep only ===
         if (timestep == 0) {
-            printf("[NaN_CHECK] First timestep - detailed check before kernel execution\n");
+            printf("[DEBUG] First timestep - detailed check before kernel execution\n");
             printf("  Current time: %.1fs, t0: %.6f\n", currentTime, t0);
             printf("  Past meteo index: %d, Future meteo index: %d\n", past_meteo_index, future_meteo_index);
             checkParticleNaN("Before first kernel execution", 5);
             checkMeteoDataNaN("After meteorological data update");
         }
+#endif
 
         // Use ensemble kernel for ensemble mode, regular kernel for single mode
         if (is_ensemble_mode) {
@@ -463,10 +447,12 @@ void LDM::runSimulation_eki(){
         }
         cudaDeviceSynchronize();
 
+#ifdef DEBUG
         // === NaN check after first kernel ===
         if (timestep == 0) {
             checkParticleNaN("After update_particle_flags", 5);
         }
+#endif
 
         NuclideConfig* nucConfig = NuclideConfig::getInstance();
 
@@ -492,12 +478,14 @@ void LDM::runSimulation_eki(){
         }
         cudaDeviceSynchronize();
 
+#ifdef DEBUG
         // === Most important check: After move_part_by_wind_mpi ===
         if (timestep == 0) {
             checkParticleNaN("After move_part_by_wind_mpi (first)", 5);
         } else if (timestep <= 3) {
             checkParticleNaN("After move_part_by_wind_mpi (timestep " + std::to_string(timestep) + ")", 3);
         }
+#endif
 
         timestep++; 
 
@@ -564,8 +552,10 @@ void LDM::runSimulation_eki(){
 }
 
 void LDM::checkParticleNaN(const std::string& location, int max_check) {
+#ifdef DEBUG
     if (part.empty()) {
-        std::cout << "[NaN_CHECK] " << location << ": Particle data is empty" << std::endl;
+        std::cout << Color::YELLOW << "[DEBUG] " << Color::RESET
+                  << location << ": Particle data is empty" << std::endl;
         return;
     }
 
@@ -580,7 +570,7 @@ void LDM::checkParticleNaN(const std::string& location, int max_check) {
                       std::isnan(p.u) || std::isnan(p.v) || std::isnan(p.w);
 
         if (has_nan) {
-            printf("[NaN_CHECK] %s: NaN detected in particle %d!\n", location.c_str(), i);
+            printf("[DEBUG] %s: NaN detected in particle %d!\n", location.c_str(), i);
             printf("  Position: x=%.6f, y=%.6f, z=%.6f\n", p.x, p.y, p.z);
             printf("  Wind: u=%.6f, v=%.6f, w=%.6f\n", p.u_wind, p.v_wind, p.w_wind);
             printf("  Turbulence: up=%.6f, vp=%.6f, wp=%.6f\n", p.up, p.vp, p.wp);
@@ -591,14 +581,17 @@ void LDM::checkParticleNaN(const std::string& location, int max_check) {
     }
 
     if (nan_count > 0) {
-        printf("[NaN_CHECK] %s: NaN detected in %d particles! (Checked %d out of %d total)\n",
+        printf("[DEBUG] %s: NaN detected in %d particles! (Checked %d out of %d total)\n",
                location.c_str(), nan_count, check_count, static_cast<int>(part.size()));
     } else {
-        std::cout << "[NaN_CHECK] " << location << ": No NaN (checked first " << check_count << " particles)" << std::endl;
+        std::cout << Color::YELLOW << "[DEBUG] " << Color::RESET
+                  << location << ": No NaN (checked first " << check_count << " particles)" << std::endl;
     }
+#endif
 }
 
 void LDM::checkMeteoDataNaN(const std::string& location) {
+#ifdef DEBUG
     // Check first meteorological data in host memory
     if (g_eki_meteo.is_initialized && !g_eki_meteo.host_flex_pres_data.empty() &&
         g_eki_meteo.host_flex_pres_data[0] != nullptr) {
@@ -615,7 +608,7 @@ void LDM::checkMeteoDataNaN(const std::string& location) {
                           std::isnan(pres_data[i].DRHO);
 
             if (has_nan) {
-                printf("[NaN_CHECK] %s: NaN detected in meteorological data index %d!\n", location.c_str(), i);
+                printf("[DEBUG] %s: NaN detected in meteorological data index %d!\n", location.c_str(), i);
                 printf("  UU=%.6f, VV=%.6f, WW=%.6f, RHO=%.6f, DRHO=%.6f\n",
                        pres_data[i].UU, pres_data[i].VV, pres_data[i].WW,
                        pres_data[i].RHO, pres_data[i].DRHO);
@@ -625,14 +618,15 @@ void LDM::checkMeteoDataNaN(const std::string& location) {
         }
 
         if (nan_count > 0) {
-            printf("[NaN_CHECK] %s: NaN detected in %d meteorological data points!\n", location.c_str(), nan_count);
+            printf("[DEBUG] %s: NaN detected in %d meteorological data points!\n", location.c_str(), nan_count);
         } else {
-            std::cout << "[NaN_CHECK] " << location << ": No NaN in meteorological data" << std::endl;
+            std::cout << Color::YELLOW << "[DEBUG] " << Color::RESET
+                      << location << ": No NaN in meteorological data" << std::endl;
         }
 
         // Also check current meteorological data in GPU memory
         if (device_meteorological_flex_pres0 && device_meteorological_flex_pres1) {
-            printf("[NaN_CHECK] %s: Checking GPU meteorological data slots...\n", location.c_str());
+            printf("[DEBUG] %s: Checking GPU meteorological data slots...\n", location.c_str());
 
             // Get sample data from GPU
             FlexPres sample_pres0, sample_pres1;
@@ -649,24 +643,26 @@ void LDM::checkMeteoDataNaN(const std::string& location) {
                               std::isnan(sample_pres1.WW) || std::isnan(sample_pres1.RHO);
 
             if (gpu_has_nan) {
-                printf("[NaN_CHECK] %s: NaN detected in GPU meteorological data slots!\n", location.c_str());
+                printf("[DEBUG] %s: NaN detected in GPU meteorological data slots!\n", location.c_str());
                 printf("  Slot0: UU=%.6f, VV=%.6f, WW=%.6f, RHO=%.6f\n",
                        sample_pres0.UU, sample_pres0.VV, sample_pres0.WW, sample_pres0.RHO);
                 printf("  Slot1: UU=%.6f, VV=%.6f, WW=%.6f, RHO=%.6f\n",
                        sample_pres1.UU, sample_pres1.VV, sample_pres1.WW, sample_pres1.RHO);
             } else {
-                printf("[NaN_CHECK] %s: No NaN in GPU meteorological data slots\n", location.c_str());
+                printf("[DEBUG] %s: No NaN in GPU meteorological data slots\n", location.c_str());
             }
         }
     } else {
-        std::cout << "[NaN_CHECK] " << location << ": Meteorological data not initialized" << std::endl;
+        std::cout << Color::YELLOW << "[DEBUG] " << Color::RESET
+                  << location << ": Meteorological data not initialized" << std::endl;
     }
+#endif
 }
 
 // ================== EKI OBSERVATION SYSTEM IMPLEMENTATION ==================
 
 void LDM::initializeEKIObservationSystem() {
-    std::cout << "[EKI_OBS] Initializing EKI observation system..." << std::endl;
+    std::cout << "Initializing observation system..." << std::endl;
     
     if (g_eki.receptor_locations.empty()) {
         std::cerr << "[ERROR] No receptor locations loaded for EKI observation system" << std::endl;
@@ -690,11 +686,13 @@ void LDM::initializeEKIObservationSystem() {
         host_lons[i] = g_eki.receptor_locations[i].second;  // longitude
     }
 
+#ifdef DEBUG
     // Debug: Print receptor locations being sent to GPU
-    std::cout << "[EKI_OBS] Receptor locations being sent to GPU:" << std::endl;
+    std::cout << Color::YELLOW << "[DEBUG] " << Color::RESET << "Receptor locations sent to GPU:" << std::endl;
     for (int i = 0; i < num_receptors; i++) {
         std::cout << "  Receptor " << (i+1) << ": (" << host_lats[i] << ", " << host_lons[i] << ")" << std::endl;
     }
+#endif
 
     // Copy receptor locations to GPU
     cudaMemcpy(d_receptor_lats, host_lats.data(), num_receptors * sizeof(float), cudaMemcpyHostToDevice);
@@ -718,12 +716,12 @@ void LDM::initializeEKIObservationSystem() {
             cudaMalloc(&d_ensemble_dose, ensemble_dose_size * sizeof(float));
             cudaMalloc(&d_ensemble_particle_count, ensemble_dose_size * sizeof(int));
 
-            std::cout << "[EKI_OBS] Ensemble mode detected: allocating GPU memory for ensemble dose" << std::endl;
-            std::cout << "[EKI_OBS] Ensemble dose size: " << ensemble_size << " × "
+            std::cout << "Ensemble mode: Allocating GPU memory for ensemble dose" << std::endl;
+            std::cout << "Ensemble dose size: " << ensemble_size << " × "
                       << g_eki.num_receptors << " × " << ensemble_num_states
                       << " = " << ensemble_dose_size << " floats" << std::endl;
         } else {
-            std::cout << "[EKI_OBS] Resetting ensemble GPU memory for new iteration" << std::endl;
+            std::cout << "Resetting ensemble GPU memory for new iteration" << std::endl;
         }
 
         // ALWAYS reset to zero (both first allocation and subsequent iterations)
@@ -743,11 +741,12 @@ void LDM::initializeEKIObservationSystem() {
                 eki_ensemble_particle_counts[ens][t].resize(g_eki.num_receptors, 0);
             }
         }
-        std::cout << "[EKI_OBS] Host storage initialized for " << ensemble_size << " ensembles" << std::endl;
+        std::cout << "Host storage initialized for " << ensemble_size << " ensembles" << std::endl;
     }
 
-    std::cout << "[EKI_OBS] Initialized for " << num_receptors << " receptors" << std::endl;
-    std::cout << "[EKI_OBS] Capture radius: " << g_eki.receptor_capture_radius << " degrees" << std::endl;
+    std::cout << Color::GREEN << "✓ " << Color::RESET << "Initialized for "
+              << Color::BOLD << num_receptors << Color::RESET << " receptors" << std::endl;
+    std::cout << "  Capture radius: " << g_eki.receptor_capture_radius << " degrees" << std::endl;
 }
 
 void LDM::computeReceptorObservations(int timestep, float currentTime) {
@@ -790,8 +789,8 @@ void LDM::computeReceptorObservations(int timestep, float currentTime) {
         cudaMemset(d_receptor_particle_count_2d, 0, total_size * sizeof(int));
         gpu_memory_allocated = true;
 
-        std::cout << "[EKI_OBS] Allocated 2D GPU memory: " << num_timesteps << " timesteps × "
-                  << num_receptors << " receptors = " << total_size << " floats (REFERENCE LAYOUT)" << std::endl;
+        std::cout << "Allocated 2D GPU memory: " << num_timesteps << " timesteps × "
+                  << num_receptors << " receptors = " << total_size << " floats" << std::endl;
     }
 
     int blockSize = 256;
@@ -832,11 +831,13 @@ void LDM::computeReceptorObservations(int timestep, float currentTime) {
         // Store time for the PREVIOUS period (matching reference)
         eki_observation_times.push_back(currentTime - eki_interval_seconds);
 
-        // Debug output
-        std::cout << "[EKI_OBS] Observation " << time_idx << " at timestep " << timestep
-                  << " (t=" << currentTime << "s):";
+        // Output observation data for Python visualization parser
+        std::cout << "[EKI_OBS] Observation " << (time_idx + 1)
+                  << " at t=" << (int)currentTime << "s:";
         for (int r = 0; r < num_receptors; r++) {
-            std::cout << " R" << (r+1) << "=" << host_dose[r] << "(" << host_particle_count[r] << "p)";
+            std::cout << " R" << (r+1) << "="
+                      << std::scientific << host_dose[r]
+                      << "(" << host_particle_count[r] << "p)";
         }
         std::cout << std::endl;
     }
@@ -844,11 +845,11 @@ void LDM::computeReceptorObservations(int timestep, float currentTime) {
 
 void LDM::saveEKIObservationResults() {
     if (eki_observations.empty()) {
-        std::cout << "[EKI_OBS] No observations to save" << std::endl;
+        std::cout << "No observations to save" << std::endl;
         return;
     }
-    
-    std::cout << "[EKI_OBS] Saving " << eki_observations.size() 
+
+    std::cout << "Saving " << eki_observations.size()
               << " observations for " << g_eki.num_receptors << " receptors" << std::endl;
     
     std::ofstream file("logs/eki_receptor_observations.txt");
@@ -894,11 +895,13 @@ void LDM::saveEKIObservationResults() {
     }
     
     file.close();
-    std::cout << "[EKI_OBS] Results saved to logs/eki_receptor_observations.txt" << std::endl;
+    std::cout << Color::GREEN << "✓ " << Color::RESET
+              << "Results saved to logs/eki_receptor_observations.txt" << std::endl;
 }
 
 bool LDM::writeEKIObservationsToSharedMemory(void* writer_ptr) {
-    std::cout << "[EKI_IPC] writeEKIObservationsToSharedMemory called but implementation moved to main_eki.cu" << std::endl;
+    std::cout << Color::CYAN << "[IPC] " << Color::RESET
+              << "writeEKIObservationsToSharedMemory called (implementation in main_eki.cu)" << std::endl;
     // Implementation moved to main_eki.cu to avoid header dependencies
     return true;
 }
@@ -939,7 +942,8 @@ void LDM::computeReceptorObservations_AllEnsembles(int timestep, float currentTi
         cudaMemset(d_ensemble_dose, 0, ensemble_dose_size * sizeof(float));
         cudaMemset(d_ensemble_particle_count, 0, ensemble_dose_size * sizeof(int));
 
-        std::cout << "[EKI_ENSEMBLE_OBS] Emergency GPU memory allocation: "
+        std::cout << Color::YELLOW << "[ENSEMBLE] " << Color::RESET
+                  << "Emergency GPU memory allocation: "
                   << num_ensembles << "×" << num_receptors << "×" << num_timesteps
                   << " = " << ensemble_dose_size << " floats" << std::endl;
 
@@ -999,18 +1003,20 @@ void LDM::computeReceptorObservations_AllEnsembles(int timestep, float currentTi
             }
         }
 
-        // Log observations for first 3 ensembles
-        std::cout << "[EKI_ENSEMBLE_OBS] Recorded observation " << time_idx << " at timestep " << timestep
-                  << " (t=" << currentTime << "s)" << std::endl;
-        const int num_sample_ensembles = std::min(3, num_ensembles);
-        for (int ens = 0; ens < num_sample_ensembles; ens++) {
-            std::cout << "[EKI_ENSEMBLE_OBS] Ens" << ens << " obs" << time_idx << ":";
-            for (int r = 0; r < num_receptors; r++) {
-                std::cout << " R" << (r+1) << "=" << eki_ensemble_observations[ens][time_idx][r]
-                         << "(" << eki_ensemble_particle_counts[ens][time_idx][r] << "p)";
+        // Output ensemble average particle counts for Python visualization parser
+        // Calculate mean particle count across all ensembles
+        std::cout << "[EKI_ENSEMBLE_OBS] obs" << (time_idx + 1)
+                  << " at t=" << (int)currentTime << "s:";
+        for (int r = 0; r < num_receptors; r++) {
+            // Calculate mean particle count for this receptor across all ensembles
+            double mean_count = 0.0;
+            for (int ens = 0; ens < num_ensembles; ens++) {
+                mean_count += eki_ensemble_particle_counts[ens][time_idx][r];
             }
-            std::cout << std::endl;
+            mean_count /= num_ensembles;
+            std::cout << " R" << (r+1) << "=" << (int)mean_count << "p";
         }
+        std::cout << std::endl;
     }
 }
 
@@ -1046,11 +1052,11 @@ void LDM::cleanupEKIObservationSystem() {
     eki_ensemble_particle_counts.clear();
     eki_observation_count = 0;
 
-    std::cout << "[EKI_OBS] Cleanup completed" << std::endl;
+    std::cout << Color::GREEN << "✓ " << Color::RESET << "Cleanup completed" << std::endl;
 }
 
 void LDM::resetEKIObservationSystemForNewIteration() {
-    std::cout << "[EKI_OBS] Resetting observation system for new iteration..." << std::endl;
+    std::cout << "Resetting observation system for new iteration..." << std::endl;
 
     // Reset GPU memory without deallocating
     if (is_ensemble_mode && d_ensemble_dose != nullptr) {
@@ -1058,7 +1064,7 @@ void LDM::resetEKIObservationSystemForNewIteration() {
         cudaMemset(d_ensemble_dose, 0, ensemble_dose_size * sizeof(float));
         cudaMemset(d_ensemble_particle_count, 0, ensemble_dose_size * sizeof(int));
 
-        std::cout << "[EKI_OBS] Reset GPU memory: " << ensemble_dose_size << " floats" << std::endl;
+        std::cout << "Reset GPU memory: " << ensemble_dose_size << " floats" << std::endl;
     }
 
     // Clear and reinitialize host storage
@@ -1076,7 +1082,8 @@ void LDM::resetEKIObservationSystemForNewIteration() {
         }
     }
 
-    std::cout << "[EKI_OBS] Host storage reinitialized for " << ensemble_size
+    std::cout << Color::GREEN << "✓ " << Color::RESET
+              << "Host storage reinitialized for " << ensemble_size
               << " ensembles, " << ensemble_num_states << " timesteps" << std::endl;
 }
 
@@ -1094,13 +1101,16 @@ void LDM::computeGridReceptorObservations(int timestep, float currentTime) {
         return;
     }
 
+#ifdef DEBUG
     // Debug output
     static int obs_count = 0;
     obs_count++;
     if (obs_count <= 5 || obs_count % 10 == 0) {
-        std::cout << "[GRID_OBS] Recording observation #" << obs_count
+        std::cout << Color::YELLOW << "[DEBUG] " << Color::RESET
+                  << "Recording observation #" << obs_count
                   << " at timestep " << timestep << " (t=" << currentTime << "s)" << std::endl;
     }
+#endif
 
     // Reset dose and particle count for this timestep
     cudaMemset(d_grid_receptor_dose, 0, grid_receptor_total * sizeof(float));
@@ -1145,22 +1155,25 @@ void LDM::computeGridReceptorObservations(int timestep, float currentTime) {
     // Store observation time
     grid_observation_times.push_back(currentTime);
 
+#ifdef DEBUG
     // Occasional debug output showing max values
     if (obs_count <= 5 || obs_count % 10 == 0) {
         float max_dose = *std::max_element(host_dose.begin(), host_dose.end());
         int max_particles = *std::max_element(host_particle_count.begin(), host_particle_count.end());
-        std::cout << "[GRID_OBS] Max dose: " << max_dose << " Sv, Max particles: " << max_particles << std::endl;
+        std::cout << Color::YELLOW << "[DEBUG] " << Color::RESET
+                  << "Max dose: " << max_dose << " Sv, Max particles: " << max_particles << std::endl;
     }
+#endif
 }
 
 void LDM::saveGridReceptorData() {
     if (!is_grid_receptor_mode || grid_observation_times.empty()) {
-        std::cout << "[GRID] No grid receptor data to save" << std::endl;
+        std::cout << "No grid receptor data to save" << std::endl;
         return;
     }
 
-    std::cout << "[GRID] Saving data for " << grid_receptor_total << " receptors" << std::endl;
-    std::cout << "[GRID] Number of time steps: " << grid_observation_times.size() << std::endl;
+    std::cout << "Saving data for " << grid_receptor_total << " receptors" << std::endl;
+    std::cout << "Number of time steps: " << grid_observation_times.size() << std::endl;
 
     // Save each receptor's data to a separate CSV file
     for (int r = 0; r < grid_receptor_total; r++) {
@@ -1188,7 +1201,7 @@ void LDM::saveGridReceptorData() {
 
         // Progress indicator
         if ((r+1) % 20 == 0 || r == grid_receptor_total - 1) {
-            std::cout << "[GRID] Saved " << (r+1) << "/" << grid_receptor_total << " receptor files" << std::endl;
+            std::cout << "Saved " << (r+1) << "/" << grid_receptor_total << " receptor files" << std::endl;
         }
     }
 
@@ -1207,7 +1220,8 @@ void LDM::saveGridReceptorData() {
         metafile.close();
     }
 
-    std::cout << "[GRID] All receptor data saved successfully to grid_receptors/" << std::endl;
+    std::cout << Color::GREEN << "✓ " << Color::RESET
+              << "All receptor data saved to grid_receptors/" << std::endl;
 }
 
 void LDM::cleanupGridReceptorSystem() {
@@ -1215,7 +1229,7 @@ void LDM::cleanupGridReceptorSystem() {
         return;
     }
 
-    std::cout << "[GRID] Cleaning up grid receptor system..." << std::endl;
+    std::cout << "Cleaning up grid receptor system..." << std::endl;
 
     // Free GPU memory
     if (d_grid_receptor_lats) {
@@ -1240,7 +1254,7 @@ void LDM::cleanupGridReceptorSystem() {
     grid_receptor_particle_counts.clear();
     grid_observation_times.clear();
 
-    std::cout << "[GRID] Cleanup completed" << std::endl;
+    std::cout << Color::GREEN << "✓ " << Color::RESET << "Cleanup completed" << std::endl;
 }
 
 void LDM::runSimulation_eki_dump(){
@@ -1257,20 +1271,21 @@ void LDM::runSimulation_eki_dump(){
     float t0 = 0.0;
     float totalElapsedTime = 0.0;
 
-    // Debug: Display simulation mode and particle configuration
-    std::cout << "\n========================================" << std::endl;
+    // Display simulation mode and particle configuration
+    std::cout << "\n" << Color::BOLD << Color::CYAN
+              << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+              << "  SIMULATION CONFIGURATION\n"
+              << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+              << Color::RESET;
     if (is_ensemble_mode) {
-        std::cout << "[EKI_SIM] Running in ENSEMBLE mode" << std::endl;
-        std::cout << "[EKI_SIM] Total particles: " << part.size()
-                  << " (" << ensemble_size << " ensembles × " << ensemble_num_states
-                  << " states)" << std::endl;
+        std::cout << "  Mode           : " << Color::MAGENTA << "ENSEMBLE" << Color::RESET << std::endl;
+        std::cout << "  Particles      : " << Color::BOLD << part.size() << Color::RESET
+                  << " (" << ensemble_size << " × " << ensemble_num_states << " states)" << std::endl;
     } else {
-        std::cout << "[EKI_SIM] Running in SINGLE mode" << std::endl;
-        std::cout << "[EKI_SIM] Total particles: " << part.size() << std::endl;
+        std::cout << "  Mode           : SINGLE" << std::endl;
+        std::cout << "  Particles      : " << Color::BOLD << part.size() << Color::RESET << std::endl;
     }
-    std::cout << "[EKI_SIM] GPU kernel configuration: " << blocks << " blocks × "
-              << threadsPerBlock << " threads" << std::endl;
-    std::cout << "========================================\n" << std::endl;
+    std::cout << "  GPU config     : " << blocks << " blocks × " << threadsPerBlock << " threads\n" << std::endl;
 
     GridConfig grid_config = loadGridConfig();
     float start_lat = grid_config.start_lat;
@@ -1314,8 +1329,10 @@ void LDM::runSimulation_eki_dump(){
     }
     std::cout << "EKI simulation starting - using preloaded meteorological data" << std::endl;
 
+#ifdef DEBUG
     // === NaN check 4: Before simulation start ===
     checkParticleNaN("Before simulation start");
+#endif
 
     //log_first_particle_concentrations(0, 0.0f);
 
@@ -1352,14 +1369,16 @@ void LDM::runSimulation_eki_dump(){
             // Update height data as well
             flex_hgt = g_eki_meteo.host_flex_hgt_data[past_meteo_index];
             
+#ifdef DEBUG
             // Verify height data at first timestep only
             if (timestep == 0) {
-                printf("[DEBUG_HGT_UPDATE] Timestep %d: Index %d height data first 5 values: ", timestep, past_meteo_index);
+                printf("[DEBUG] Timestep %d: Index %d height data first 5 values: ", timestep, past_meteo_index);
                 for (int i = 0; i < std::min(5, (int)flex_hgt.size()); i++) {
                     printf("%.1f ", flex_hgt[i]);
                 }
                 printf("... %.1f\n", flex_hgt[flex_hgt.size()-1]);
             }
+#endif
             
             // CRITICAL FIX: Copy height data to GPU constant memory
             cudaError_t hgt_err = cudaMemcpyToSymbol(d_flex_hgt, flex_hgt.data(), sizeof(float) * dimZ_GFS);
@@ -1400,14 +1419,16 @@ void LDM::runSimulation_eki_dump(){
             }
         }
 
+#ifdef DEBUG
         // === Detailed NaN check at first timestep only ===
         if (timestep == 0) {
-            printf("[NaN_CHECK] First timestep - detailed check before kernel execution\n");
+            printf("[DEBUG] First timestep - detailed check before kernel execution\n");
             printf("  Current time: %.1fs, t0: %.6f\n", currentTime, t0);
             printf("  Past meteo index: %d, Future meteo index: %d\n", past_meteo_index, future_meteo_index);
             checkParticleNaN("Before first kernel execution", 5);
             checkMeteoDataNaN("After meteorological data update");
         }
+#endif
 
         // Use ensemble kernel for ensemble mode, regular kernel for single mode
         if (is_ensemble_mode) {
@@ -1423,10 +1444,12 @@ void LDM::runSimulation_eki_dump(){
         }
         cudaDeviceSynchronize();
 
+#ifdef DEBUG
         // === NaN check after first kernel ===
         if (timestep == 0) {
             checkParticleNaN("After update_particle_flags", 5);
         }
+#endif
 
         NuclideConfig* nucConfig = NuclideConfig::getInstance();
 
@@ -1452,12 +1475,14 @@ void LDM::runSimulation_eki_dump(){
         }
         cudaDeviceSynchronize();
 
+#ifdef DEBUG
         // === Most important check: After move_part_by_wind_mpi ===
         if (timestep == 0) {
             checkParticleNaN("After move_part_by_wind_mpi (first)", 5);
         } else if (timestep <= 3) {
             checkParticleNaN("After move_part_by_wind_mpi (timestep " + std::to_string(timestep) + ")", 3);
         }
+#endif
 
         timestep++; 
 

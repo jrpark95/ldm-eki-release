@@ -134,25 +134,44 @@ def parse_ensemble_particle_counts(log_file='logs/ldm_eki_simulation.log', num_r
             for line in f:
                 # Pattern: [EKI_ENSEMBLE_OBS] EnsX obsY: R1=... R2=...
                 if '[EKI_ENSEMBLE_OBS]' in line:
-                    # Extract ensemble ID and observation index
-                    ens_match = re.search(r'Ens(\d+) obs(\d+):', line)
-                    if ens_match:
-                        ens_id = int(ens_match.group(1))
-                        obs_idx = int(ens_match.group(2)) - 1  # Convert to 0-based
+                    # Try new format first: [EKI_ENSEMBLE_OBS] obsY at t=Xs: R1=countp R2=countp...
+                    new_format_match = re.search(r'obs(\d+) at t=(\d+)s:', line)
+                    if new_format_match:
+                        obs_idx = int(new_format_match.group(1)) - 1  # Convert to 0-based
 
                         if obs_idx not in ensemble_data:
                             ensemble_data[obs_idx] = {}
                             for r in range(1, num_receptors + 1):
-                                ensemble_data[obs_idx][f'R{r}_dose'] = []
                                 ensemble_data[obs_idx][f'R{r}_count'] = []
 
-                        # Extract all receptor data
+                        # Extract all receptor particle counts (already averaged in C++)
                         for r in range(1, num_receptors + 1):
-                            pattern = rf'R{r}=([\d.e+-]+)\((\d+)p\)'
+                            pattern = rf'R{r}=(\d+)p'
                             match = re.search(pattern, line)
                             if match:
-                                ensemble_data[obs_idx][f'R{r}_dose'].append(float(match.group(1)))
-                                ensemble_data[obs_idx][f'R{r}_count'].append(int(match.group(2)))
+                                # Store as single-element array for compatibility with mean/std calculation
+                                ensemble_data[obs_idx][f'R{r}_count'] = [int(match.group(1))]
+
+                    else:
+                        # Fallback to old format: [EKI_ENSEMBLE_OBS] EnsX obsY: R1=dose(count) R2=...
+                        ens_match = re.search(r'Ens(\d+) obs(\d+):', line)
+                        if ens_match:
+                            ens_id = int(ens_match.group(1))
+                            obs_idx = int(ens_match.group(2)) - 1  # Convert to 0-based
+
+                            if obs_idx not in ensemble_data:
+                                ensemble_data[obs_idx] = {}
+                                for r in range(1, num_receptors + 1):
+                                    ensemble_data[obs_idx][f'R{r}_dose'] = []
+                                    ensemble_data[obs_idx][f'R{r}_count'] = []
+
+                            # Extract all receptor data
+                            for r in range(1, num_receptors + 1):
+                                pattern = rf'R{r}=([\d.e+-]+)\((\d+)p\)'
+                                match = re.search(pattern, line)
+                                if match:
+                                    ensemble_data[obs_idx][f'R{r}_dose'].append(float(match.group(1)))
+                                    ensemble_data[obs_idx][f'R{r}_count'].append(int(match.group(2)))
 
         print(f"Loaded ensemble data for {len(ensemble_data)} observation points")
     except Exception as e:
@@ -411,9 +430,7 @@ def create_receptor_comparison():
         # ========== ROW 1: PARTICLE COUNTS ==========
         for col, r in enumerate(receptors_on_page):
             ax = fig.add_subplot(gs[0, col])
-            # Shift single mode left by one time index
-            times_single = times - time_interval
-            ax.plot(times_single, single_counts[r], 'o-', color=single_color,
+            ax.plot(times, single_counts[r], 'o-', color=single_color,
                      linewidth=2, markersize=5, label='Single Mode', alpha=0.9)
             ax.plot(times, ens_counts_mean[r], 's--', color=ensemble_color,
                      linewidth=2, markersize=4, label='Ensemble Mean', alpha=0.9)

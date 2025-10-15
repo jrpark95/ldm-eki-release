@@ -1,26 +1,33 @@
 #include "ldm.cuh"
+#include "colors.h"
 
 
 void LDM::initializeFlexGFSData(){
 
-    std::cout << "[DEBUG] Starting read_meteorological_flex_gfs_init3 function..." << std::endl;
+#ifdef DEBUG
+    std::cout << Color::YELLOW << "[DEBUG] " << Color::RESET
+              << "Starting meteorological data initialization\n";
+#endif
 
     flex_hgt.resize(dimZ_GFS);
-    std::cout << "[DEBUG] flex_hgt vector resized to " << dimZ_GFS << " elements" << std::endl;
 
     const char* filename = "../gfsdata/0p5/2.txt";
     int recordMarker;
 
     size_t pres_data_size = (dimX_GFS + 1) * dimY_GFS * dimZ_GFS;
     size_t unis_data_size = (dimX_GFS + 1) * dimY_GFS;
-    std::cout << "[DEBUG] Allocating memory for FlexPres data: " << pres_data_size << " elements" << std::endl;
-    std::cout << "[DEBUG] Allocating memory for FlexUnis data: " << unis_data_size << " elements" << std::endl;
+#ifdef DEBUG
+    std::cout << Color::YELLOW << "[DEBUG] " << Color::RESET
+              << "Allocating memory: FlexPres=" << pres_data_size
+              << ", FlexUnis=" << unis_data_size << " elements\n";
+#endif
 
     FlexPres* flexpresdata = new FlexPres[pres_data_size];
     FlexUnis* flexunisdata = new FlexUnis[unis_data_size];
 
     if (!flexpresdata || !flexunisdata) {
-        std::cerr << "[ERROR] Failed to allocate memory for meteorological data" << std::endl;
+        std::cerr << Color::RED << Color::BOLD << "[ERROR] " << Color::RESET
+                  << "Failed to allocate memory for meteorological data\n";
         if (flexpresdata) delete[] flexpresdata;
         if (flexunisdata) delete[] flexunisdata;
         return;
@@ -28,12 +35,16 @@ void LDM::initializeFlexGFSData(){
 
     std::ifstream file(filename, std::ios::binary);
     if (!file) {
-        std::cerr << "[ERROR] Cannot open file: " << filename << std::endl;
+        std::cerr << Color::RED << Color::BOLD << "[ERROR] " << Color::RESET
+                  << "Cannot open file: " << Color::BOLD << filename << Color::RESET << "\n";
         delete[] flexpresdata;
         delete[] flexunisdata;
         return;
     }
-    std::cout << "[DEBUG] Successfully opened file: " << filename << std::endl;
+#ifdef DEBUG
+    std::cout << Color::GREEN << "✓ " << Color::RESET
+              << "Opened file: " << filename << "\n";
+#endif
 
     // Read HMIX data
     for (int i = 0; i < dimX_GFS+1; ++i) {
@@ -271,17 +282,24 @@ void LDM::initializeFlexGFSData(){
         }
     }
     
-    // Debug simplified - just check if data loaded
-    std::cout << "[INFO] Wind data loaded - UU[0,0,0]=" << flexpresdata[0].UU 
-              << ", VV[0,0,0]=" << flexpresdata[0].VV 
-              << ", WW[0,0,0]=" << flexpresdata[0].WW << std::endl;
-    
+#ifdef DEBUG
+    std::cout << Color::YELLOW << "[DEBUG] " << Color::RESET
+              << "Wind data sample: UU[0,0,0]=" << flexpresdata[0].UU
+              << ", VV[0,0,0]=" << flexpresdata[0].VV
+              << ", WW[0,0,0]=" << flexpresdata[0].WW << "\n";
+#endif
+
     // Check file read status
     if (file.fail() || file.bad()) {
-        std::cerr << "[ERROR] File read error detected. fail=" << file.fail() << ", bad=" << file.bad() << std::endl;
-    } else {
-        std::cout << "[DEBUG] File read completed successfully" << std::endl;
+        std::cerr << Color::RED << Color::BOLD << "[ERROR] " << Color::RESET
+                  << "File read error detected\n";
     }
+#ifdef DEBUG
+    else {
+        std::cout << Color::GREEN << "✓ " << Color::RESET
+                  << "File read completed successfully\n";
+    }
+#endif
 
 
 
@@ -296,19 +314,27 @@ void LDM::initializeFlexGFSData(){
         flexpresdata, (dimX_GFS+1) * dimY_GFS * dimZ_GFS * sizeof(FlexPres), 
         cudaMemcpyHostToDevice);
     if (copy_err != cudaSuccess) {
-        std::cerr << "[ERROR] Failed to copy meteorological pres data to GPU: " << cudaGetErrorString(copy_err) << std::endl;
-    } else {
-        std::cout << "[DEBUG] Meteorological pres data copied successfully" << std::endl;
+        std::cerr << Color::RED << Color::BOLD << "[ERROR] " << Color::RESET
+                  << "Failed to copy pres data to GPU: " << cudaGetErrorString(copy_err) << "\n";
     }
+#ifdef DEBUG
+    else {
+        std::cout << Color::GREEN << "✓ " << Color::RESET << "Pres data copied to GPU\n";
+    }
+#endif
     
     copy_err = cudaMemcpy(device_meteorological_flex_unis0, 
         flexunisdata, (dimX_GFS+1) * dimY_GFS * sizeof(FlexUnis), 
         cudaMemcpyHostToDevice);
     if (copy_err != cudaSuccess) {
-        std::cerr << "[ERROR] Failed to copy meteorological unis data to GPU: " << cudaGetErrorString(copy_err) << std::endl;
-    } else {
-        std::cout << "[DEBUG] Meteorological unis data copied successfully" << std::endl;
+        std::cerr << Color::RED << Color::BOLD << "[ERROR] " << Color::RESET
+                  << "Failed to copy unis data to GPU: " << cudaGetErrorString(copy_err) << "\n";
     }
+#ifdef DEBUG
+    else {
+        std::cout << Color::GREEN << "✓ " << Color::RESET << "Unis data copied to GPU\n";
+    }
+#endif
 
 
     // int size2D = (dimX_GFS + 1) * dimY_GFS;
@@ -1101,7 +1127,8 @@ void LDM::loadFlexGFSData(){
 
     std::ifstream file(filename, std::ios::binary);
     if (!file) {
-        std::cerr << "Cannot open file: " << filename << std::endl;
+        std::cerr << Color::RED << Color::BOLD << "[ERROR] " << Color::RESET
+                  << "Cannot open file: " << Color::BOLD << filename << Color::RESET << "\n";
         return;
     }
     else{
@@ -1694,7 +1721,8 @@ bool LDM::loadSingleMeteoFile(int file_index, FlexPres*& pres_data, FlexUnis*& u
 }
 
 bool LDM::preloadAllEKIMeteorologicalData() {
-    std::cout << "Starting meteorological data preloading for EKI..." << std::endl;
+    std::cout << Color::CYAN << Color::BOLD << "\n[METEO] " << Color::RESET
+              << "Starting meteorological data preloading for EKI\n";
     
     // Clean up existing data
     g_eki_meteo.cleanup();
@@ -1717,7 +1745,8 @@ bool LDM::preloadAllEKIMeteorologicalData() {
     g_eki_meteo.host_flex_unis_data.resize(num_files);
     g_eki_meteo.host_flex_hgt_data.resize(num_files);
     
-    std::cout << "Starting parallel CPU loading of " << num_files << " files..." << std::endl;
+    std::cout << Color::CYAN << "[METEO] " << Color::RESET
+              << "Parallel CPU loading: " << Color::BOLD << num_files << Color::RESET << " files\n";
     auto start_time = std::chrono::high_resolution_clock::now();
     
     // Use thread pool for true parallel execution
@@ -1765,21 +1794,24 @@ bool LDM::preloadAllEKIMeteorologicalData() {
         }
     }
     
-    std::cout << "Parallel loading result: " << completed_files.load() << "/" << num_files << " completed" << std::endl;
-    
     auto end_time = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-    
+
     if (!all_success) {
-        std::cerr << "[ERROR] Some meteorological data files failed to load" << std::endl;
+        std::cerr << Color::RED << Color::BOLD << "[ERROR] " << Color::RESET
+                  << "Some meteorological files failed: "
+                  << completed_files.load() << "/" << num_files << "\n";
         g_eki_meteo.cleanup();
         return false;
     }
-    
-    std::cout << "CPU parallel loading completed (" << duration.count() << "ms)" << std::endl;
+
+    std::cout << Color::GREEN << "✓ " << Color::RESET
+              << "CPU loading completed: " << Color::BOLD << num_files << Color::RESET
+              << " files (" << duration.count() << "ms)\n";
     
     // GPU memory allocation and copying
-    std::cout << "Starting GPU memory allocation and data transfer..." << std::endl;
+    std::cout << Color::CYAN << "[METEO] " << Color::RESET
+              << "Starting GPU memory allocation and data transfer\n";
     auto gpu_start_time = std::chrono::high_resolution_clock::now();
     
     // Allocate GPU memory pointer arrays
@@ -1788,7 +1820,8 @@ bool LDM::preloadAllEKIMeteorologicalData() {
     cudaError_t err3 = cudaMalloc((void**)&g_eki_meteo.device_flex_hgt_data, num_files * sizeof(float*));
     
     if (err1 != cudaSuccess || err2 != cudaSuccess || err3 != cudaSuccess) {
-        std::cerr << "[ERROR] GPU 포인터 배열 할당 실패" << std::endl;
+        std::cerr << Color::RED << Color::BOLD << "[ERROR] " << Color::RESET
+                  << "Failed to allocate GPU pointer array\n";
         g_eki_meteo.cleanup();
         return false;
     }
@@ -1854,7 +1887,7 @@ bool LDM::preloadAllEKIMeteorologicalData() {
         return false;
     }
     
-    // 포인터 배열을 GPU로 복사
+    // Copy pointer arrays to GPU
     err1 = cudaMemcpy(g_eki_meteo.device_flex_pres_data, temp_pres_ptrs.data(), 
                       num_files * sizeof(FlexPres*), cudaMemcpyHostToDevice);
     err2 = cudaMemcpy(g_eki_meteo.device_flex_unis_data, temp_unis_ptrs.data(), 
@@ -1863,7 +1896,8 @@ bool LDM::preloadAllEKIMeteorologicalData() {
                       num_files * sizeof(float*), cudaMemcpyHostToDevice);
     
     if (err1 != cudaSuccess || err2 != cudaSuccess || err3 != cudaSuccess) {
-        std::cerr << "[ERROR] GPU 포인터 배열 복사 실패" << std::endl;
+        std::cerr << Color::RED << Color::BOLD << "[ERROR] " << Color::RESET
+                  << "Failed to copy GPU pointer array\n";
         g_eki_meteo.cleanup();
         return false;
     }
@@ -1882,7 +1916,7 @@ bool LDM::preloadAllEKIMeteorologicalData() {
     cudaError_t err_alloc3 = cudaMalloc((void**)&g_eki_meteo.ldm_pres1_slot, g_eki_meteo.pres_data_size);
     cudaError_t err_alloc4 = cudaMalloc((void**)&g_eki_meteo.ldm_unis1_slot, g_eki_meteo.unis_data_size);
     
-    // 전역 변수에 포인터 복사
+    // Copy pointers to global variables
     device_meteorological_flex_pres0 = g_eki_meteo.ldm_pres0_slot;
     device_meteorological_flex_unis0 = g_eki_meteo.ldm_unis0_slot;
     device_meteorological_flex_pres1 = g_eki_meteo.ldm_pres1_slot;
@@ -1926,12 +1960,14 @@ bool LDM::preloadAllEKIMeteorologicalData() {
     
     g_eki_meteo.is_initialized = true;
     
-    std::cout << "GPU memory transfer completed (" << gpu_duration.count() << "ms)" << std::endl;
-    std::cout << "Total preloading completed (" << (duration.count() + gpu_duration.count()) << "ms)" << std::endl;
-    std::cout << "Memory usage: " << std::endl;
-    std::cout << "  - Pres data: " << (g_eki_meteo.pres_data_size * num_files / 1024 / 1024) << " MB" << std::endl;
-    std::cout << "  - Unis data: " << (g_eki_meteo.unis_data_size * num_files / 1024 / 1024) << " MB" << std::endl;
-    std::cout << "  - Height data: " << (g_eki_meteo.hgt_data_size * num_files / 1024) << " KB" << std::endl;
+    std::cout << Color::GREEN << "✓ " << Color::RESET
+              << "GPU transfer completed (" << gpu_duration.count() << "ms)\n";
+    std::cout << Color::GREEN << Color::BOLD << "✓ " << Color::RESET
+              << "Total preloading completed (" << (duration.count() + gpu_duration.count()) << "ms)\n";
+    std::cout << "  Memory usage:\n";
+    std::cout << "    Pres data   : " << Color::BOLD << (g_eki_meteo.pres_data_size * num_files / 1024 / 1024) << " MB" << Color::RESET << "\n";
+    std::cout << "    Unis data   : " << Color::BOLD << (g_eki_meteo.unis_data_size * num_files / 1024 / 1024) << " MB" << Color::RESET << "\n";
+    std::cout << "    Height data : " << Color::BOLD << (g_eki_meteo.hgt_data_size * num_files / 1024) << " KB" << Color::RESET << "\n";
     
     return true;
 }

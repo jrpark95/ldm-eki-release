@@ -25,6 +25,16 @@ import shutil
 import argparse
 from pathlib import Path
 
+# ANSI color codes
+class Color:
+    RESET = '\033[0m'
+    RED = '\033[31m'
+    GREEN = '\033[32m'
+    YELLOW = '\033[33m'
+    BLUE = '\033[34m'
+    CYAN = '\033[36m'
+    BOLD = '\033[1m'
+
 # Change to project root directory
 script_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(script_dir)
@@ -79,7 +89,7 @@ def scan_shared_memory():
                 if entry.name.startswith('ldm_eki'):
                     shm_files.add(entry.path)
     except PermissionError:
-        print("⚠️  Warning: No permission to scan /dev/shm")
+        print("Warning: No permission to scan /dev/shm")
 
     return sorted(shm_files)
 
@@ -96,7 +106,7 @@ def count_files_recursive(path):
 def clean_directory(path, dry_run=False):
     """Clean all contents of a directory while preserving the directory itself"""
     if not os.path.exists(path):
-        print(f"  ℹ️  Directory does not exist: {path}")
+        print(f"  Directory does not exist: {path}")
         return 0, 0
 
     file_count = count_files_recursive(path)
@@ -129,11 +139,11 @@ def clean_directory(path, dry_run=False):
                     removed_files += count_files_recursive(item_path)
                     removed_size += size
             except Exception as e:
-                print(f"  ⚠️  Failed to delete {item_path}: {e}")
+                print(f"  Warning: Failed to delete {item_path}: {e}")
 
-        print(f"  ✓ Cleaned {path}: {removed_files} files ({format_size(removed_size)})")
+        print(f"  {Color.GREEN}✓{Color.RESET} Cleaned {path}: {Color.BOLD}{removed_files}{Color.RESET} files ({format_size(removed_size)})")
     except Exception as e:
-        print(f"  ❌ Error cleaning {path}: {e}")
+        print(f"  Error cleaning {path}: {e}")
         return 0, 0
 
     return removed_files, removed_size
@@ -143,7 +153,7 @@ def clean_shared_memory(dry_run=False):
     shm_files = scan_shared_memory()
 
     if not shm_files:
-        print("  ✓ No shared memory files found")
+        print(f"  {Color.GREEN}✓{Color.RESET} No shared memory files found")
         return 0, 0
 
     removed_count = 0
@@ -157,19 +167,19 @@ def clean_shared_memory(dry_run=False):
                 print(f"  [DRY RUN] Would delete: {shm_file} ({format_size(size)})")
             else:
                 os.unlink(shm_file)
-                print(f"  ✓ Deleted: {shm_file} ({format_size(size)})")
+                print(f"  {Color.GREEN}✓{Color.RESET} Deleted: {shm_file} ({format_size(size)})")
                 removed_count += 1
                 removed_size += size
         except FileNotFoundError:
             # File already deleted
             pass
         except PermissionError:
-            print(f"  ⚠️  Permission denied: {shm_file}")
+            print(f"  Warning: Permission denied: {shm_file}")
         except Exception as e:
-            print(f"  ⚠️  Failed to delete {shm_file}: {e}")
+            print(f"  Warning: Failed to delete {shm_file}: {e}")
 
     if not dry_run and removed_count > 0:
-        print(f"  ✓ Cleaned {removed_count} shared memory files ({format_size(removed_size)})")
+        print(f"  {Color.GREEN}✓{Color.RESET} Cleaned {Color.BOLD}{removed_count}{Color.RESET} shared memory files ({format_size(removed_size)})")
 
     return removed_count, removed_size
 
@@ -197,15 +207,15 @@ def main():
     clean_shm = args.shm_only or (not args.logs_only and not args.output_only)
 
     print("=" * 70)
-    print("LDM-EKI CLEANUP SCRIPT")
+    print(f"{Color.CYAN}{Color.BOLD}LDM-EKI CLEANUP SCRIPT{Color.RESET}")
     print("=" * 70)
-    print(f"Working directory: {os.getcwd()}")
+    print(f"Working directory: {Color.BOLD}{os.getcwd()}{Color.RESET}")
 
     if args.dry_run:
-        print("\n🔍 DRY RUN MODE - No files will be deleted\n")
+        print("\nDRY RUN MODE - No files will be deleted\n")
 
     # Show what will be cleaned
-    print("\nItems to be cleaned:")
+    print(f"\n{Color.BOLD}Items to be cleaned:{Color.RESET}")
     if clean_logs:
         print("  - ./logs/")
     if clean_output:
@@ -215,7 +225,7 @@ def main():
 
     # Scan and show preview
     print("\n" + "=" * 70)
-    print("SCANNING...")
+    print(f"{Color.CYAN}SCANNING...{Color.RESET}")
     print("=" * 70)
 
     total_files = 0
@@ -242,10 +252,10 @@ def main():
         total_files += len(shm_files)
         total_size += shm_size
 
-    print(f"\nTotal: {total_files} files, {format_size(total_size)}")
+    print(f"\n{Color.BOLD}Total: {total_files} files, {format_size(total_size)}{Color.RESET}")
 
     if total_files == 0:
-        print("\n✅ Nothing to clean - all directories are already empty")
+        print(f"\n{Color.GREEN}✓{Color.RESET} Nothing to clean - all directories are already empty")
         return 0
 
     # Confirmation
@@ -258,33 +268,33 @@ def main():
 
     # Perform cleanup
     print("\n" + "=" * 70)
-    print("CLEANING...")
+    print(f"{Color.CYAN}CLEANING...{Color.RESET}")
     print("=" * 70)
 
     removed_files = 0
     removed_size = 0
 
     if clean_logs:
-        print("\n📁 Cleaning logs/...")
+        print("\nCleaning logs/...")
         count, size = clean_directory('logs', args.dry_run)
         removed_files += count
         removed_size += size
 
     if clean_output:
-        print("\n📁 Cleaning output/...")
+        print("\nCleaning output/...")
         count, size = clean_directory('output', args.dry_run)
         removed_files += count
         removed_size += size
 
     if clean_shm:
-        print("\n💾 Cleaning shared memory...")
+        print("\nCleaning shared memory...")
         count, size = clean_shared_memory(args.dry_run)
         removed_files += count
         removed_size += size
 
     # Summary
     print("\n" + "=" * 70)
-    print("SUMMARY")
+    print(f"{Color.CYAN}SUMMARY{Color.RESET}")
     print("=" * 70)
 
     if args.dry_run:
@@ -292,7 +302,7 @@ def main():
         print("\nRun without --dry-run to actually delete files")
     else:
         print(f"Deleted: {removed_files} files ({format_size(removed_size)})")
-        print("✅ Cleanup complete")
+        print(f"{Color.GREEN}✓{Color.RESET} Cleanup complete")
 
     print("=" * 70)
     return 0
@@ -304,5 +314,5 @@ if __name__ == "__main__":
         print("\n\nAborted by user.")
         sys.exit(1)
     except Exception as e:
-        print(f"\n❌ Error: {e}")
+        print(f"\nError: {e}")
         sys.exit(1)

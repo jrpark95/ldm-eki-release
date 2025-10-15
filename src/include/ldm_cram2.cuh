@@ -6,6 +6,7 @@
 #include <string>
 #include <cmath>
 #include <cstdlib>
+#include "colors.h"
 
 #ifndef N_NUCLIDES
 #define N_NUCLIDES 60
@@ -195,15 +196,22 @@ bool LDM::build_T_matrix_and_upload(const char* A60_csv_path) {
         }
     }
 
-    std::cout << "[DEBUG] Attempting to copy T matrix to T_const symbol (" << Th.size() << " floats, " << Th.size()*sizeof(float) << " bytes)" << std::endl;
+#ifdef DEBUG
+    std::cout << Color::YELLOW << "[DEBUG] " << Color::RESET
+              << "Copying T matrix to T_const symbol ("
+              << Th.size() << " floats, " << Th.size()*sizeof(float) / 1024.0 << " KB)\n";
+#endif
     cudaError_t e = cudaMemcpyToSymbol(T_const, Th.data(),
                                        Th.size()*sizeof(float), 0, cudaMemcpyHostToDevice);
     if (e != cudaSuccess) {
-        std::cerr << "[ERROR] Failed to copy T matrix to T_const constant memory: " << cudaGetErrorString(e) << std::endl;
+        std::cerr << Color::RED << Color::BOLD << "[ERROR] " << Color::RESET
+                  << "Failed to copy T matrix to T_const: " << cudaGetErrorString(e) << "\n";
         return false;
-    } else {
-        std::cout << "[DEBUG] Successfully copied T matrix to T_const constant memory" << std::endl;
     }
+#ifdef DEBUG
+    std::cout << Color::GREEN << "✓ " << Color::RESET
+              << "T matrix copied to GPU constant memory\n";
+#endif
     return e == cudaSuccess;
 }
 

@@ -12,6 +12,19 @@ import numpy as np
 from typing import Tuple
 from memory_doctor import memory_doctor
 
+# Color output support
+try:
+    from colorama import Fore, Style, init
+    init(autoreset=True)
+    HAS_COLOR = True
+except ImportError:
+    # Fallback if colorama not available
+    class DummyColor:
+        def __getattr__(self, name):
+            return ''
+    Fore = Style = DummyColor()
+    HAS_COLOR = False
+
 
 class EKIIPCWriter:
     """
@@ -57,11 +70,10 @@ class EKIIPCWriter:
 
             self.config_written = True
             self.current_iteration = iteration  # Store for later use
-            print(f"[EKI_IPC_WRITER] Config written: {num_states} states, {num_ensemble} ensemble, iteration {iteration}")
             return True
 
         except Exception as e:
-            print(f"[EKI_IPC_WRITER] Failed to write config: {e}")
+            print(f"{Fore.RED}{Style.BRIGHT}[ERROR]{Style.RESET_ALL} Failed to write ensemble config: {e}")
             return False
 
     def write_ensemble_states(self, states: np.ndarray, num_states: int, num_ensemble: int) -> bool:
@@ -118,36 +130,17 @@ class EKIIPCWriter:
             # Set permissions
             os.chmod(data_path, 0o660)
 
-            print(f"[EKI_IPC_WRITER] Ensemble states written: {num_states}x{num_ensemble} matrix ({data_size} bytes)")
-            print(f"[EKI_IPC_WRITER] Data range: [{states.min():.3e}, {states.max():.3e}]")
-
             # Memory Doctor: Log sent ensemble states with iteration
             if memory_doctor.is_enabled():
                 iteration = getattr(self, 'current_iteration', 0)
                 memory_doctor.log_sent_data("ensemble_states", states, iteration,
                                           f"Python->LDM ensemble states {num_states}x{num_ensemble} (iteration {iteration})")
 
-            # DEBUG: Read back what we just wrote to verify
-            with open(data_path, 'rb') as f:
-                f.seek(12)  # Skip header
-                read_back = np.frombuffer(f.read(data_size), dtype=np.float32)
-                read_back = read_back.reshape((num_states, num_ensemble))
-
-                neg_original = (states < 0).sum()
-                neg_readback = (read_back < 0).sum()
-
-                print(f"[EKI_IPC_WRITER DEBUG] Original negatives: {neg_original}, Read-back negatives: {neg_readback}")
-                print(f"[EKI_IPC_WRITER DEBUG] Read-back range: [{read_back.min():.3e}, {read_back.max():.3e}]")
-                print(f"[EKI_IPC_WRITER DEBUG] First 5 values original: {states.flatten()[:5]}")
-                print(f"[EKI_IPC_WRITER DEBUG] First 5 values readback: {read_back.flatten()[:5]}")
-
-                if neg_original != neg_readback:
-                    print(f"[EKI_IPC_WRITER ERROR] DATA CORRUPTION: Negative count changed from {neg_original} to {neg_readback}!")
-
             return True
 
         except Exception as e:
-            print(f"[EKI_IPC_WRITER] Failed to write ensemble states: {e}")
+            print(f"{Fore.RED}{Style.BRIGHT}[ERROR]{Style.RESET_ALL} Failed to write ensemble states: {e}")
+            print(f"  → Check /dev/shm permissions and available space")
             import traceback
             traceback.print_exc()
             return False

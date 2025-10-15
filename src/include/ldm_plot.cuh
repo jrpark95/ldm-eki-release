@@ -1,5 +1,6 @@
 #include "ldm.cuh"
 #include "ldm_nuclides.cuh"
+#include "colors.h"
 #include <omp.h>
 
 int LDM::countActiveParticles(){
@@ -161,10 +162,12 @@ void LDM::outputParticlesBinaryMPI_ens(int timestep){
 
     static bool first_call = true;
     if (first_call) {
-        std::cout << "[OpenMP] Ensemble output parallelization enabled with "
-                  << omp_get_max_threads() << " threads" << std::endl;
-        std::cout << "[VTK_OUTPUT] Selected ensemble for output: ensemble "
-                  << selected_ensemble_ids[0] << " (fixed)" << std::endl;
+        std::cout << Color::CYAN << "[VTK] " << Color::RESET
+                  << "Ensemble output parallelization: " << Color::BOLD
+                  << omp_get_max_threads() << Color::RESET << " threads\n";
+        std::cout << Color::CYAN << "[VTK] " << Color::RESET
+                  << "Selected ensemble for output: " << Color::BOLD
+                  << selected_ensemble_ids[0] << Color::RESET << "\n";
         first_call = false;
     }
 
@@ -173,7 +176,8 @@ void LDM::outputParticlesBinaryMPI_ens(int timestep){
     size_t total_particles = part.size();
 
     if (total_particles == 0) {
-        std::cerr << "[ERROR] part vector is empty in outputParticlesBinaryMPI_ens!" << std::endl;
+        std::cerr << Color::RED << Color::BOLD << "[ERROR] " << Color::RESET
+                  << "Particle vector is empty in ensemble output\n";
         return;
     }
 
@@ -239,13 +243,15 @@ void LDM::outputParticlesBinaryMPI_ens(int timestep){
 
     // Group particles by ensemble_id and write separate files
     if (!is_ensemble_mode) {
-        std::cerr << "[WARNING] outputParticlesBinaryMPI_ens called but not in ensemble mode" << std::endl;
+        std::cerr << Color::YELLOW << "[WARNING] " << Color::RESET
+                  << "Ensemble output called but not in ensemble mode\n";
         return;
     }
 
     // Check if selected ensembles are initialized
     if (selected_ensemble_ids.empty()) {
-        std::cerr << "[WARNING] No ensembles selected for output. Skipping VTK output." << std::endl;
+        std::cerr << Color::YELLOW << "[WARNING] " << Color::RESET
+                  << "No ensembles selected for output, skipping VTK\n";
         return;
     }
 
@@ -403,14 +409,14 @@ void LDM::outputParticlesBinaryMPI_ens(int timestep){
             if (write_count < 5) {
                 float orig_vval = vval;
                 swapByteOrder(vval);
-                std::cout << "[DEBUG_WRITE] P" << idx << ": orig=" << orig_vval
-                          << ", swapped=" << vval
-                          << ", bytes=";
-                unsigned char* bytes = reinterpret_cast<unsigned char*>(&vval);
-                for (int b = 0; b < 4; b++) {
-                    printf("%02x ", bytes[b]);
-                }
-                std::cout << std::endl;
+                // std::cout << "[DEBUG_WRITE] P" << idx << ": orig=" << orig_vval
+                //           << ", swapped=" << vval
+                //           << ", bytes=";
+                // unsigned char* bytes = reinterpret_cast<unsigned char*>(&vval);
+                // for (int b = 0; b < 4; b++) {
+                //     printf("%02x ", bytes[b]);
+                // }
+                // std::cout << std::endl;
                 write_count++;
                 // Continue to write
                 vtkFile.write(reinterpret_cast<char*>(&vval), sizeof(float));

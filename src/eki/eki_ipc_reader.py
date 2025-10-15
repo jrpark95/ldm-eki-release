@@ -13,6 +13,19 @@ import numpy as np
 from typing import Tuple, Optional
 from memory_doctor import memory_doctor
 
+# Color output support
+try:
+    from colorama import Fore, Style, init
+    init(autoreset=True)
+    HAS_COLOR = True
+except ImportError:
+    # Fallback if colorama not available
+    class DummyColor:
+        def __getattr__(self, name):
+            return ''
+    Fore = Style = DummyColor()
+    HAS_COLOR = False
+
 
 class EKIIPCReader:
     """
@@ -55,14 +68,12 @@ class EKIIPCReader:
                 # Unpack little-endian int32 values
                 self.ensemble_size, self.num_receptors, self.num_timesteps = struct.unpack('<3i', data)
                 self._config_loaded = True
-                
-                print(f"[EKI_IPC] Config loaded: {self.ensemble_size} ensembles, "
-                      f"{self.num_receptors} receptors, {self.num_timesteps} timesteps")
-                
+
                 return self.ensemble_size, self.num_receptors, self.num_timesteps
-                
+
         except OSError as e:
-            raise OSError(f"Failed to read config shared memory: {e}")
+            raise OSError(f"{Fore.RED}{Style.BRIGHT}[ERROR]{Style.RESET_ALL} Failed to read config shared memory: {e}\n"
+                        f"  → Check if LDM has created /dev/shm/ldm_eki_config")
     
     def read_eki_observations(self) -> np.ndarray:
         """
@@ -115,10 +126,7 @@ class EKIIPCReader:
                     
                     # Reshape to (receptors, timesteps) - row-major format
                     observations_2d = observations.reshape((rows, cols), order='C')
-                    
-                    print(f"[EKI_IPC] Observations loaded: {rows}x{cols} matrix")
-                    print(f"[EKI_IPC] Data range: [{observations_2d.min():.2e}, {observations_2d.max():.2e}]")
-                    
+
                     result = observations_2d.copy()  # Copy to ensure data persists after mmap close
                     
                 finally:
@@ -174,8 +182,6 @@ def receive_gamma_dose_matrix_shm() -> np.ndarray:
     
     # Add batch dimension to match original interface: (1, receptors, timesteps)
     observations_3d = np.expand_dims(observations_2d, axis=0)
-
-    print(f"[EKI_IPC] Shared memory read complete: {observations_3d.shape}")
 
     # Memory Doctor: Log received initial observations (iteration 0)
     if memory_doctor.is_enabled():
@@ -271,13 +277,6 @@ def read_eki_full_config_shm() -> dict:
                 'memory_doctor': memory_doctor,  # Memory Doctor mode setting
             }
 
-            print(f"[EKI_IPC] Full config loaded from shared memory:")
-            print(f"  - {ensemble_size} ensembles, {num_receptors} receptors, {num_timesteps} timesteps")
-            print(f"  - Iteration: {iteration}, Regularization: {regularization}")
-            print(f"  - GPU: {num_gpu} devices, Forward: {gpu_forward}, Inverse: {gpu_inverse}")
-            print(f"  - Source: {source_location}, {num_source} sources")
-            print(f"  - Memory Doctor: {memory_doctor}")
-
             return config_dict
 
     except OSError as e:
@@ -349,11 +348,6 @@ def receive_ensemble_observations_shm(current_iteration=None):
             # Unpack config: 3 int32 values (little-endian)
             ensemble_size, num_receptors, num_timesteps = struct.unpack('<3i', config_data)
 
-            print(f"[EKI_IPC] Ensemble observation config loaded:")
-            print(f"  - Ensembles: {ensemble_size}")
-            print(f"  - Receptors: {num_receptors}")
-            print(f"  - Timesteps: {num_timesteps}")
-
         # Read observation data
         with open(data_path, 'rb') as f:
             # Memory map for efficient reading
@@ -373,14 +367,6 @@ def receive_ensemble_observations_shm(current_iteration=None):
             # Binary reshape MUST match C++ memory order
             observations = flat_array.reshape(ensemble_size, num_timesteps, num_receptors)
 
-            # Calculate statistics
-            print(f"[EKI_IPC] Ensemble observations received:")
-            print(f"  - Shape: {observations.shape}  # [Ens][Timestep][Receptor]")
-            print(f"  - Min: {np.min(observations):.6e}")
-            print(f"  - Max: {np.max(observations):.6e}")
-            print(f"  - Mean: {np.mean(observations):.6e}")
-            print(f"  - Non-zero elements: {np.count_nonzero(observations)}")
-
             # Close memory map
             mmapped_file.close()
 
@@ -393,8 +379,9 @@ def receive_ensemble_observations_shm(current_iteration=None):
             return observations
 
     except FileNotFoundError as e:
-        print(f"[EKI_IPC] Shared memory files not found. Make sure LDM has written ensemble observations.")
+        print(f"{Fore.RED}{Style.BRIGHT}[ERROR]{Style.RESET_ALL} Ensemble observation files not found")
+        print(f"  → Check if LDM has written to /dev/shm/ldm_eki_ensemble_obs_*")
         raise e
     except Exception as e:
-        print(f"[EKI_IPC] Error reading ensemble observations: {e}")
+        print(f"{Fore.RED}{Style.BRIGHT}[ERROR]{Style.RESET_ALL} Failed to read ensemble observations: {e}")
         raise e

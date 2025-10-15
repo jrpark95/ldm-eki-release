@@ -162,13 +162,11 @@ struct EKIMeteorologicalData {
     
     void cleanup() {
         if (!is_initialized) {
-            std::cout << "Meteorological data already cleaned up" << std::endl;
             return;
         }
 
         try {
             // Clean up host memory
-            std::cout << "Cleaning up host meteorological data..." << std::endl;
             for (size_t i = 0; i < host_flex_pres_data.size(); i++) {
                 if (host_flex_pres_data[i] != nullptr) {
                     delete[] host_flex_pres_data[i];
@@ -186,7 +184,6 @@ struct EKIMeteorologicalData {
             host_flex_hgt_data.clear();
 
             // Clean up GPU memory (order is important!)
-            std::cout << "Cleaning up GPU meteorological data..." << std::endl;
 
             // First release individual GPU memory blocks
             if (device_flex_pres_data && num_time_steps > 0) {
@@ -243,7 +240,6 @@ struct EKIMeteorologicalData {
             is_initialized = false;
 
             // Clean up existing LDM GPU memory slots
-            std::cout << "Cleaning up LDM GPU memory slots..." << std::endl;
             if (ldm_pres0_slot) {
                 cudaFree(ldm_pres0_slot);
                 ldm_pres0_slot = nullptr;
@@ -260,8 +256,6 @@ struct EKIMeteorologicalData {
                 cudaFree(ldm_unis1_slot);
                 ldm_unis1_slot = nullptr;
             }
-
-            std::cout << "Meteorological data cleanup completed" << std::endl;
 
         } catch (const std::exception& e) {
             std::cerr << "[ERROR] Exception during memory cleanup: " << e.what() << std::endl;

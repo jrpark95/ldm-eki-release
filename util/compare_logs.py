@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-비교 스크립트: 개발 코드 vs 레퍼런스 코드
-단계별 데이터 비교를 통해 차이 발생 지점 특정
+Comparison Script: Development Code vs Reference Code
+Identifies divergence points through step-by-step data comparison
 """
 
 import numpy as np
@@ -98,7 +98,7 @@ def compare_iteration_data(iteration):
 
 def main():
     print("=" * 80)
-    print("LDM-EKI 개발 코드 vs 레퍼런스 코드 비교")
+    print("LDM-EKI Development Code vs Reference Code Comparison")
     print("=" * 80)
 
     # Compare prior state

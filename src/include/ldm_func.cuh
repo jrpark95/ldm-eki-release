@@ -205,7 +205,7 @@ void LDM::runSimulation(){
 
         NuclideConfig* nucConfig = NuclideConfig::getInstance();
         move_part_by_wind_mpi<<<blocks, threadsPerBlock>>>
-        (d_part, t0, mpiRank, d_dryDep, d_wetDep, mesh.lon_count, mesh.lat_count,
+        (d_part, t0, PROCESS_INDEX, d_dryDep, d_wetDep, mesh.lon_count, mesh.lat_count,
             device_meteorological_flex_unis0,
             device_meteorological_flex_pres0,
             device_meteorological_flex_unis1,
@@ -475,7 +475,7 @@ void LDM::runSimulation_eki(){
             // Ensemble mode: process all particles (d_nop × ensemble_size)
             int total_particles = part.size();
             move_part_by_wind_mpi_ens<<<blocks, threadsPerBlock>>>
-            (d_part, t0, mpiRank, d_dryDep, d_wetDep, mesh.lon_count, mesh.lat_count,
+            (d_part, t0, PROCESS_INDEX, d_dryDep, d_wetDep, mesh.lon_count, mesh.lat_count,
                 device_meteorological_flex_unis0,
                 device_meteorological_flex_pres0,
                 device_meteorological_flex_unis1,
@@ -484,7 +484,7 @@ void LDM::runSimulation_eki(){
         } else {
             // Single mode: process d_nop particles
             move_part_by_wind_mpi<<<blocks, threadsPerBlock>>>
-            (d_part, t0, mpiRank, d_dryDep, d_wetDep, mesh.lon_count, mesh.lat_count,
+            (d_part, t0, PROCESS_INDEX, d_dryDep, d_wetDep, mesh.lon_count, mesh.lat_count,
                 device_meteorological_flex_unis0,
                 device_meteorological_flex_pres0,
                 device_meteorological_flex_unis1,
@@ -1435,7 +1435,7 @@ void LDM::runSimulation_eki_dump(){
             // Ensemble mode: process all particles (d_nop × ensemble_size)
             int total_particles = part.size();
             move_part_by_wind_mpi_ens_dump<<<blocks, threadsPerBlock>>>
-            (d_part, t0, mpiRank, d_dryDep, d_wetDep, mesh.lon_count, mesh.lat_count,
+            (d_part, t0, PROCESS_INDEX, d_dryDep, d_wetDep, mesh.lon_count, mesh.lat_count,
                 device_meteorological_flex_unis0,
                 device_meteorological_flex_pres0,
                 device_meteorological_flex_unis1,
@@ -1444,7 +1444,7 @@ void LDM::runSimulation_eki_dump(){
         } else {
             // Single mode: process d_nop particles
             move_part_by_wind_mpi_dump<<<blocks, threadsPerBlock>>>
-            (d_part, t0, mpiRank, d_dryDep, d_wetDep, mesh.lon_count, mesh.lat_count,
+            (d_part, t0, PROCESS_INDEX, d_dryDep, d_wetDep, mesh.lon_count, mesh.lat_count,
                 device_meteorological_flex_unis0,
                 device_meteorological_flex_pres0,
                 device_meteorological_flex_unis1,

@@ -461,6 +461,9 @@ def create_receptor_comparison():
         else:
             output_path = f'output/results/all_receptors_comparison_page{page_idx+1}.png'
 
+        # Ensure output directory exists
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
         plt.savefig(output_path, dpi=150, bbox_inches='tight')
         output_paths.append(output_path)
         print(f"   ✅ Saved: {output_path}")
@@ -497,4 +500,8 @@ def create_receptor_comparison():
     print("="*70)
 
 if __name__ == "__main__":
+    # Change to project root directory
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(script_dir)
+    os.chdir(project_root)
     create_receptor_comparison()

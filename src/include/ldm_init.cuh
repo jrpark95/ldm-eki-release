@@ -167,9 +167,9 @@ void LDM::initializeParticles(){
 
     std::random_device rd;
     auto now = std::chrono::high_resolution_clock::now();
-    auto seed = now.time_since_epoch().count() + mpiRank * 1000;
+    auto seed = now.time_since_epoch().count() + PROCESS_INDEX * 1000;
     std::mt19937 gen(seed);
-    std::normal_distribution<float> dist(g_mpi.particleSizes[mpiRank], g_mpi.sizeStandardDeviations[mpiRank]);
+    std::normal_distribution<float> dist(g_mpi.particleSizes[PROCESS_INDEX], g_mpi.sizeStandardDeviations[PROCESS_INDEX]);
 
     int particle_count = 0;
     for (const auto& conc : concentrations) {
@@ -186,11 +186,11 @@ void LDM::initializeParticles(){
             float random_radius = dist(gen);
 
             part.push_back(LDMpart(x, y, z,
-                                   g_mpi.decayConstants[mpiRank],
+                                   g_mpi.decayConstants[PROCESS_INDEX],
                                    conc.value,
-                                   g_mpi.depositionVelocities[mpiRank],
+                                   g_mpi.depositionVelocities[PROCESS_INDEX],
                                    random_radius,
-                                   g_mpi.particleDensities[mpiRank],
+                                   g_mpi.particleDensities[PROCESS_INDEX],
                                    i + 1));
             
             // Initialize multi-nuclide concentrations for the newly created particle
@@ -253,9 +253,9 @@ void LDM::initializeParticlesEKI(){
     
     std::random_device rd;
     auto now = std::chrono::high_resolution_clock::now();
-    auto seed = now.time_since_epoch().count() + mpiRank * 1000;
+    auto seed = now.time_since_epoch().count() + PROCESS_INDEX * 1000;
     std::mt19937 gen(seed);
-    std::normal_distribution<float> dist(g_mpi.particleSizes[mpiRank], g_mpi.sizeStandardDeviations[mpiRank]);
+    std::normal_distribution<float> dist(g_mpi.particleSizes[PROCESS_INDEX], g_mpi.sizeStandardDeviations[PROCESS_INDEX]);
 
     int interval_idx = 0;
     int count_in_interval = 0;
@@ -278,11 +278,11 @@ void LDM::initializeParticlesEKI(){
         // For single mode EKI: set all particles to timeidx=1 so they activate immediately
         // (different from ensemble mode where particles activate at different times)
         part.push_back(LDMpart(x, y, z,
-                               g_mpi.decayConstants[mpiRank],
+                               g_mpi.decayConstants[PROCESS_INDEX],
                                emission_value,
-                               g_mpi.depositionVelocities[mpiRank],
+                               g_mpi.depositionVelocities[PROCESS_INDEX],
                                random_radius,
-                               g_mpi.particleDensities[mpiRank],
+                               g_mpi.particleDensities[PROCESS_INDEX],
                                i+1));  // Changed from (i+1) to (1) for immediate activation
         
         // Initialize multi-nuclide concentrations for the newly created particle
@@ -366,9 +366,9 @@ void LDM::initializeParticlesEKI_AllEnsembles(float* ensemble_states, int num_en
 
     std::random_device rd;
     auto now = std::chrono::high_resolution_clock::now();
-    auto seed = now.time_since_epoch().count() + mpiRank * 1000;
+    auto seed = now.time_since_epoch().count() + PROCESS_INDEX * 1000;
     std::mt19937 gen(seed);
-    std::normal_distribution<float> dist(g_mpi.particleSizes[mpiRank], g_mpi.sizeStandardDeviations[mpiRank]);
+    std::normal_distribution<float> dist(g_mpi.particleSizes[PROCESS_INDEX], g_mpi.sizeStandardDeviations[PROCESS_INDEX]);
 
     // Clear and reserve memory
     part.clear();
@@ -394,11 +394,11 @@ void LDM::initializeParticlesEKI_AllEnsembles(float* ensemble_states, int num_en
 
                 // 입자 생성
                 LDMpart particle(x, y, z,
-                                g_mpi.decayConstants[mpiRank],
+                                g_mpi.decayConstants[PROCESS_INDEX],
                                 emission_value,
-                                g_mpi.depositionVelocities[mpiRank],
+                                g_mpi.depositionVelocities[PROCESS_INDEX],
                                 random_radius,
-                                g_mpi.particleDensities[mpiRank],
+                                g_mpi.particleDensities[PROCESS_INDEX],
                                 timeidx);
 
                 // 앙상블 ID 설정
@@ -497,9 +497,9 @@ void LDM::calculateAverageSettlingVelocity(){
 }
 
 void LDM::calculateSettlingVelocity(){
-    float prho = g_mpi.particleDensities[mpiRank];
-    float radi = g_mpi.particleSizes[mpiRank];
-    float dsig = g_mpi.sizeStandardDeviations[mpiRank];
+    float prho = g_mpi.particleDensities[PROCESS_INDEX];
+    float radi = g_mpi.particleSizes[PROCESS_INDEX];
+    float dsig = g_mpi.sizeStandardDeviations[PROCESS_INDEX];
 
     if (radi == 0.0f) {
         vsetaver = 1.0f;

@@ -5,6 +5,11 @@ Diagnose EKI convergence issue - check if observations are being updated
 import numpy as np
 import os
 
+# Change to project root directory
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(script_dir)
+os.chdir(project_root)
+
 print("="*70)
 print("DIAGNOSING EKI CONVERGENCE ISSUE")
 print("="*70)

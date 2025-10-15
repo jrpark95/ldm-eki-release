@@ -1,6 +1,7 @@
 #pragma once
 
-#include <mpi.h>
+// MPI header removed - not using MPI functions
+// #include <mpi.h>
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
 #include <iostream>
@@ -659,15 +660,14 @@ public:
 };
 
 #define LDM_CLASS_DECLARED 1
-// Global MPI variables - modernized
-extern int mpiRank, mpiSize;
 
 // Global nuclide count variable
 extern int g_num_nuclides;
 
-// Legacy aliases for compatibility
-#define __rank mpiRank
-#define __size mpiSize
+// Single-process constants (MPI removed)
+// Previously: mpiRank = 1, mpiSize = 1
+// Now using index 0 for all g_mpi array accesses
+constexpr int PROCESS_INDEX = 0;
 
 // Note: Core constants are now compile-time constants for CUDA compatibility
 
@@ -739,8 +739,8 @@ GridConfig loadGridConfig() {
     return config;
 }
 
-// Global variable definitions
-int mpiRank = 1, mpiSize = 1;
+// MPI variables removed - using single process mode
+// g_mpi arrays now accessed with index 0 (PROCESS_INDEX)
 
 // void loadRadionuclideData() {
 //     std::vector<std::string> species_names = g_config.getStringArray("species_names");

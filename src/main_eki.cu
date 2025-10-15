@@ -27,34 +27,32 @@ int g_raddecay;
 
 int main(int argc, char** argv) {
 
-    mpiRank = 1;
-    mpiSize = 1;
+    // Single process mode (MPI removed)
 
     // Clean logs directory and redirect output
     std::cout << "=== LDM-EKI: Source Term Inversion with Ensemble Kalman Methods ===" << std::endl;
-    std::cout << "[LOG] Cleaning logs directory and VTK output folders..." << std::endl;
+    std::cout << "[LOG] Cleaning previous simulation data..." << std::endl;
 
-    // Clean old log files
+    // Create necessary directories
     system("mkdir -p logs");
-    system("rm -f logs/*.log logs/*.txt logs/eki_*.log");
-
-    // Clean VTK output directories - NEW STRUCTURE
     system("mkdir -p output/plot_vtk_prior");
     system("mkdir -p output/plot_vtk_ens");
     system("mkdir -p output/results");
-    system("rm -f output/plot_vtk_prior/*.vtk");
-    system("rm -f output/plot_vtk_ens/*.vtk");
-
-    // Clean previous EKI iteration files
     system("mkdir -p logs/eki_iterations");
-    system("rm -f logs/eki_iterations/iteration_*.npy");
 
-    // Clean shared memory files from previous run
-    system("rm -f /dev/shm/ldm_eki_*");
+    // Use centralized cleanup script for data cleanup
+    std::cout << "[LOG] Running cleanup script (util/cleanup.py)..." << std::endl;
+    int cleanup_ret = system("python3 util/cleanup.py");
 
-    std::cout << "[LOG] Cleaned VTK files from output/plot_vtk_prior/ and output/plot_vtk_ens/ directories" << std::endl;
-    std::cout << "[LOG] Cleaned previous EKI iteration files from logs/eki_iterations/ directory" << std::endl;
-    std::cout << "[LOG] Cleaned shared memory files from /dev/shm/" << std::endl;
+    if (cleanup_ret == 0) {
+        std::cout << "[LOG] ✅ Cleanup completed successfully" << std::endl;
+    } else {
+        std::cout << "[LOG] ⚠️  Cleanup script returned code " << cleanup_ret << std::endl;
+        // If user declined cleanup (exit code 0 from aborted script), continue anyway
+        if (cleanup_ret != 0) {
+            std::cout << "[LOG] Continuing without cleanup..." << std::endl;
+        }
+    }
     
     // Open log file for output redirection
     std::ofstream logFile("logs/ldm_eki_simulation.log");
@@ -661,24 +659,23 @@ int main(int argc, char** argv) {
     std::cout << "\n[VISUALIZATION] Generating comparison graphs..." << std::endl;
 
     // Check if visualization script exists
-    std::ifstream viz_script("compare_all_receptors.py");
+    std::ifstream viz_script("util/compare_all_receptors.py");
     if (viz_script.good()) {
         viz_script.close();
 
-        int viz_ret = system("python compare_all_receptors.py > /tmp/ldm_viz.log 2>&1");
+        int viz_ret = system("python3 util/compare_all_receptors.py > /tmp/ldm_viz.log 2>&1");
 
         if (viz_ret == 0) {
             std::cout << "[VISUALIZATION] ✅ Successfully generated: output/results/all_receptors_comparison.png" << std::endl;
         } else {
             std::cout << "[VISUALIZATION] ⚠️  Visualization script failed (exit code: " << viz_ret << ")" << std::endl;
             std::cout << "[VISUALIZATION] Check /tmp/ldm_viz.log for details" << std::endl;
-            std::cout << "[VISUALIZATION] You can manually run: python compare_all_receptors.py" << std::endl;
+            std::cout << "[VISUALIZATION] You can manually run: python3 util/compare_all_receptors.py" << std::endl;
         }
     } else {
-        std::cout << "[VISUALIZATION] ⚠️  Script not found: compare_all_receptors.py" << std::endl;
+        std::cout << "[VISUALIZATION] ⚠️  Script not found: util/compare_all_receptors.py" << std::endl;
         std::cout << "[VISUALIZATION] Skipping automatic visualization" << std::endl;
     }
 
-    // MPI_Finalize();
     return 0;
 }

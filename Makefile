@@ -1,8 +1,12 @@
 NVCC = /usr/local/cuda/bin/nvcc
-NVCCFLAGS = -w -O3 -arch=sm_61 -DCRAM_DEBUG -I./src/include -I./src/kernels
+# Optimized flags for faster compilation:
+# - Removed -DCRAM_DEBUG (CRAM not used)
+# - Using -O2 instead of -O3 (faster compilation, minimal runtime difference)
+# - Parallel build enabled (use: make -j4)
+NVCCFLAGS = -w -O2 -arch=sm_61 -I./src/include -I./src/kernels
 
-MPI_INC = /usr/local/openmpi/include
-MPI_LIB = /usr/local/openmpi/lib
+# Enable parallel builds
+MAKEFLAGS += -j$(shell nproc)
 
 ifeq ($(OS),Windows_NT)
     OS_DETECTED := Windows
@@ -11,7 +15,9 @@ else
     UNAME_S := $(shell uname -s)
     ifeq ($(UNAME_S),Linux)
         OS_DETECTED := Linux
-        NVCCFLAGS += -Xcompiler -fPIC -Xcompiler -fopenmp -I$(MPI_INC) -L$(MPI_LIB) -lmpi -lcublas -lgomp
+        # Removed -fPIC, -lcublas, -lmpi (not actively used)
+        # Note: mpiRank/mpiSize variables exist in code but MPI functions are not called
+        NVCCFLAGS += -Xcompiler -fopenmp -lgomp
         PATH_SEP := /
     endif
 endif

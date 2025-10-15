@@ -62,10 +62,10 @@ def compare_arrays(dev_data, ref_data, name):
 
 def compare_iteration_data(iteration):
     """Compare data for a specific iteration"""
-    dev_states_file = f"logs/dev_iter{iteration:03d}_ensemble_states_sent.npy"
+    dev_states_file = f"../logs/dev_iter{iteration:03d}_ensemble_states_sent.npy"
     ref_states_file = f"/home/jrpark/ekitest2/ldm-eki-ref-eki/logs/ref_iter{iteration:03d}_ensemble_states_sent.npy"
 
-    dev_obs_file = f"logs/dev_iter{iteration:03d}_ensemble_observations_received.npy"
+    dev_obs_file = f"../logs/dev_iter{iteration:03d}_ensemble_observations_received.npy"
     ref_obs_file = f"/home/jrpark/ekitest2/ldm-eki-ref-eki/logs/ref_iter{iteration:03d}_ensemble_observations_received.npy"
 
     # Check if files exist
@@ -102,8 +102,8 @@ def main():
     print("=" * 80)
 
     # Compare prior state
-    if os.path.exists("logs/dev_prior_state.npy") and os.path.exists("logs/ref_prior_state.npy"):
-        dev_prior_state = np.load("logs/dev_prior_state.npy")
+    if os.path.exists("../logs/dev_prior_state.npy") and os.path.exists("../logs/ref_prior_state.npy"):
+        dev_prior_state = np.load("../logs/dev_prior_state.npy")
         # Reference prior state is in the old location
         if os.path.exists("/home/jrpark/ekitest2/logs/reference/prior_state.npy"):
             ref_prior_state = np.load("/home/jrpark/ekitest2/logs/reference/prior_state.npy")
@@ -112,7 +112,7 @@ def main():
         print("Prior state files not found, skipping...")
 
     # Compare prior ensemble
-    dev_prior_ens_path = "logs/dev_prior_ensemble.npy"
+    dev_prior_ens_path = "../logs/dev_prior_ensemble.npy"
     ref_prior_ens_path = "/home/jrpark/ekitest2/ldm-eki-ref-eki/logs/ref_prior_ensemble.npy"
     if os.path.exists(dev_prior_ens_path) and os.path.exists(ref_prior_ens_path):
         dev_prior_ensemble = np.load(dev_prior_ens_path)
@@ -124,7 +124,7 @@ def main():
         print(f"  Ref: {ref_prior_ens_path} exists={os.path.exists(ref_prior_ens_path)}")
 
     # Compare initial observation
-    dev_init_obs_path = "logs/dev_initial_observation.npy"
+    dev_init_obs_path = "../logs/dev_initial_observation.npy"
     ref_init_obs_path = "/home/jrpark/ekitest2/ldm-eki-ref-eki/logs/ref_initial_observation.npy"
     if os.path.exists(dev_init_obs_path) and os.path.exists(ref_init_obs_path):
         dev_init_obs = np.load(dev_init_obs_path)
@@ -154,6 +154,8 @@ def main():
     print("=" * 80)
 
 if __name__ == "__main__":
-    # Change to LDM-EKI2-impl directory
-    os.chdir("/home/jrpark/ekitest2/LDM-EKI2-impl")
+    # Get the script directory and change to project root
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(script_dir)
+    os.chdir(project_root)
     main()

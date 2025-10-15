@@ -65,34 +65,91 @@ int main(int argc, char** argv) {
     // Redirect cout and cerr to log file while keeping console output
     std::streambuf* coutbuf = std::cout.rdbuf();
     std::streambuf* cerrbuf = std::cerr.rdbuf();
-    
-    // Use tee-like functionality: output to both console and file
-    class TeeStreambuf : public std::streambuf {
-        std::streambuf* sb1;
-        std::streambuf* sb2;
+
+    // Color-stripping streambuf: removes ANSI escape codes before writing to log
+    class ColorStripStreambuf : public std::streambuf {
+        std::streambuf* dest;
+        enum State { NORMAL, ESC, CSI };
+        State state;
     public:
-        TeeStreambuf(std::streambuf* sb1, std::streambuf* sb2) : sb1(sb1), sb2(sb2) {}
+        ColorStripStreambuf(std::streambuf* d) : dest(d), state(NORMAL) {}
+
         int overflow(int c) {
             if (c == EOF) return !EOF;
-            int r1 = sb1->sputc(c);
-            int r2 = sb2->sputc(c);
+
+            switch (state) {
+                case NORMAL:
+                    if (c == '\033') {  // ESC character
+                        state = ESC;
+                        return c;
+                    }
+                    return dest->sputc(c);
+
+                case ESC:
+                    if (c == '[') {  // CSI sequence
+                        state = CSI;
+                        return c;
+                    }
+                    // Not a CSI, output the ESC and this char
+                    dest->sputc('\033');
+                    state = NORMAL;
+                    return dest->sputc(c);
+
+                case CSI:
+                    // Skip all characters until we find the final byte (0x40-0x7E)
+                    if (c >= 0x40 && c <= 0x7E) {
+                        state = NORMAL;
+                    }
+                    return c;  // Consume but don't output
+            }
+            return c;
+        }
+
+        int sync() {
+            return dest->pubsync();
+        }
+    };
+
+    // Tee streambuf: outputs to console and color-stripped log file
+    class TeeStreambuf : public std::streambuf {
+        std::streambuf* console;
+        ColorStripStreambuf* logStrip;
+    public:
+        TeeStreambuf(std::streambuf* con, ColorStripStreambuf* log) : console(con), logStrip(log) {}
+        int overflow(int c) {
+            if (c == EOF) return !EOF;
+            int r1 = console->sputc(c);
+            int r2 = logStrip->overflow(c);
             return (r1 == EOF || r2 == EOF) ? EOF : c;
         }
         int sync() {
-            int r1 = sb1->pubsync();
-            int r2 = sb2->pubsync();
+            int r1 = console->pubsync();
+            int r2 = logStrip->sync();
             return (r1 == 0 && r2 == 0) ? 0 : -1;
         }
     };
-    
-    static TeeStreambuf tee_cout(coutbuf, logFile.rdbuf());
-    static TeeStreambuf tee_cerr(cerrbuf, logFile.rdbuf());
-    
+
+    static ColorStripStreambuf log_strip_cout(logFile.rdbuf());
+    static ColorStripStreambuf log_strip_cerr(logFile.rdbuf());
+    static TeeStreambuf tee_cout(coutbuf, &log_strip_cout);
+    static TeeStreambuf tee_cerr(cerrbuf, &log_strip_cerr);
+
     std::cout.rdbuf(&tee_cout);
     std::cerr.rdbuf(&tee_cerr);
 
+    // Create log-only output stream (not shown in terminal)
+    static std::ostream logonly(&log_strip_cout);
+
     std::cout << Color::CYAN << "[SYSTEM] " << Color::RESET
               << "Logging to " << Color::BOLD << "logs/ldm_eki_simulation.log" << Color::RESET << "\n" << std::endl;
+
+    // Log-only: detailed startup information
+    logonly << "\n========================================\n";
+    logonly << "LDM-EKI Detailed Simulation Log\n";
+    logonly << "========================================\n";
+    logonly << "Start time: " << std::chrono::system_clock::now().time_since_epoch().count() << "\n";
+    logonly << "Working directory: " << getenv("PWD") << "\n";
+    logonly << "========================================\n\n";
 
     // Load nuclide configuration
     NuclideConfig* nucConfig = NuclideConfig::getInstance();
@@ -107,9 +164,21 @@ int main(int argc, char** argv) {
     // Update global nuclide count
     g_num_nuclides = nucConfig->getNumNuclides();
 
+    // Log-only: nuclide configuration details
+    logonly << "[CONFIG] Nuclide configuration loaded successfully\n";
+    logonly << "  Number of nuclides: " << g_num_nuclides << "\n";
+    logonly << "  Configuration file: " << nuclide_config_file << "\n\n";
+
     LDM ldm;
 
     ldm.loadSimulationConfiguration();
+
+    // Log-only: simulation configuration details
+    logonly << "[CONFIG] Simulation configuration loaded\n";
+    logonly << "  Physics switches: TURB=" << g_turb_switch
+            << " DRYDEP=" << g_drydep
+            << " WETDEP=" << g_wetdep
+            << " RADDECAY=" << g_raddecay << "\n\n";
 
     // Load EKI settings
     std::cout << "Loading configuration from " << Color::BOLD << "input/eki_settings.txt" << Color::RESET << "..." << std::flush;
@@ -289,6 +358,12 @@ int main(int argc, char** argv) {
             continue_iterations = false;
             break;
         }
+
+        // Log-only: detailed ensemble data received info
+        logonly << "\n[ITERATION " << current_iteration << "] Ensemble data received from Python\n";
+        logonly << "  Dimensions: " << num_states << " states × " << num_ensemble << " members\n";
+        logonly << "  Total values: " << ensemble_data.size() << "\n";
+        logonly << "  Memory size: " << (ensemble_data.size() * sizeof(float) / 1024.0) << " KB\n";
 
         // Calculate statistics
         float min_val = *std::min_element(ensemble_data.begin(), ensemble_data.end());
@@ -606,6 +681,13 @@ int main(int argc, char** argv) {
 
     std::cout << "\n" << Color::BOLD << Color::ORANGE << "✓ Iteration " << current_iteration
               << "/" << max_iterations << " completed" << Color::RESET << "\n" << std::endl;
+
+        // Log-only: iteration summary
+        logonly << "[ITERATION " << current_iteration << "] Completed successfully\n";
+        logonly << "  Observations sent: " << total_obs_elements << " values\n";
+        logonly << "  Observation range: [" << *std::min_element(flat_ensemble_observations.begin(), flat_ensemble_observations.end())
+                << ", " << *std::max_element(flat_ensemble_observations.begin(), flat_ensemble_observations.end()) << "]\n";
+        logonly << "----------------------------------------\n\n";
 
     } // End of iteration loop
 

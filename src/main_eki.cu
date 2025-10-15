@@ -41,7 +41,7 @@ int main(int argc, char** argv) {
     // Create necessary directories
     std::cout << Color::CYAN << "[SYSTEM] " << Color::RESET << "Creating output directories..." << std::flush;
     system("mkdir -p logs output/plot_vtk_prior output/plot_vtk_ens output/results logs/eki_iterations 2>/dev/null");
-    std::cout << Color::GREEN << " ✓\n" << Color::RESET;
+    std::cout << " done\n";
 
     // Use centralized cleanup script for data cleanup
     std::cout << Color::CYAN << "[SYSTEM] " << Color::RESET << "Running cleanup script..." << std::endl;
@@ -114,7 +114,7 @@ int main(int argc, char** argv) {
     // Load EKI settings
     std::cout << "Loading configuration from " << Color::BOLD << "input/eki_settings.txt" << Color::RESET << "..." << std::flush;
     ldm.loadEKISettings();
-    std::cout << Color::GREEN << " ✓\n" << Color::RESET;
+    std::cout << " done\n";
 
     // Initialize Memory Doctor if enabled in settings
     extern MemoryDoctor g_memory_doctor;
@@ -127,19 +127,17 @@ int main(int argc, char** argv) {
                   << "CRAM system initialization failed" << std::endl;
         return 1;
     }
-    std::cout << Color::GREEN << " ✓\n" << Color::RESET << std::endl;
+    std::cout << " done\n" << std::endl;
 
     ldm.calculateAverageSettlingVelocity();
     ldm.initializeParticlesEKI();
 
     // Preload all meteorological data for EKI mode
-    std::cout << "Preloading meteorological data..." << std::flush;
     if (!ldm.preloadAllEKIMeteorologicalData()) {
         std::cerr << Color::RED << "\n[ERROR] " << Color::RESET
                   << "Failed to preload meteorological data" << std::endl;
         return 1;
     }
-    std::cout << Color::GREEN << " ✓\n" << Color::RESET << std::endl;
 
     ldm.allocateGPUMemory();
 
@@ -280,7 +278,6 @@ int main(int argc, char** argv) {
             }
             break;
         }
-        std::cout << Color::GREEN << " ✓\n" << Color::RESET;
 
         // Read ensemble states
         std::vector<float> ensemble_data;
@@ -607,7 +604,7 @@ int main(int argc, char** argv) {
               << " × " << num_timesteps << "]" << Color::RESET
               << " (" << total_obs_elements << " values)" << std::endl;
 
-    std::cout << "\n" << Color::BOLD << Color::YELLOW << "✓ Iteration " << current_iteration
+    std::cout << "\n" << Color::BOLD << Color::ORANGE << "✓ Iteration " << current_iteration
               << "/" << max_iterations << " completed" << Color::RESET << "\n" << std::endl;
 
     } // End of iteration loop
@@ -634,14 +631,14 @@ int main(int argc, char** argv) {
     eki_writer.cleanup();
     LDM_EKI_IPC::EKIWriter::unlinkSharedMemory();
     LDM_EKI_IPC::EKIReader::unlinkEnsembleSharedMemory();
-    std::cout << Color::GREEN << " ✓\n" << Color::RESET;
+    std::cout << " done\n";
 
     // Restore original stream buffers
     std::cout.rdbuf(coutbuf);
     std::cerr.rdbuf(cerrbuf);
     logFile.close();
 
-    std::cout << "\n" << Color::YELLOW << Color::BOLD << "✓ Simulation completed" << Color::RESET << std::endl;
+    std::cout << "\n" << Color::ORANGE << Color::BOLD << "✓ Simulation completed" << Color::RESET << std::endl;
     std::cout << "  Logs: " << Color::BOLD << "logs/ldm_eki_simulation.log" << Color::RESET << std::endl;
 
     // ========================================================================
@@ -658,7 +655,7 @@ int main(int argc, char** argv) {
         int viz_ret = system("python3 util/compare_all_receptors.py > /tmp/ldm_viz.log 2>&1");
 
         if (viz_ret == 0) {
-            std::cout << Color::GREEN << " ✓\n" << Color::RESET;
+            std::cout << " done\n";
             std::cout << "  Output: " << Color::BOLD
                       << "output/results/all_receptors_comparison.png" << Color::RESET << std::endl;
         } else {

@@ -739,3 +739,147 @@ std::cout << "\rProcessing: " << i << "/" << total
               << "Variable value: " << value << "\n";
 #endif
 ```
+
+---
+
+## Work Distribution for Parallel Refactoring
+
+To maximize efficiency, this refactoring can be done across **3 parallel Claude sessions**. Below is the recommended file distribution based on line count and logical grouping.
+
+### **Session 1: C++ Core Files** (~4,673 lines)
+
+Main entry point and core simulation logic
+
+**Files**:
+1. `src/main_eki.cu` (691 lines) - Main entry point
+2. `src/include/ldm_func.cuh` (1,523 lines) - Core simulation functions
+3. `src/include/ldm_mdata.cuh` (1,942 lines) - Meteorological data loading
+4. `src/include/ldm_init.cuh` (860 lines) - Particle initialization
+5. `src/include/ldm.cuh` (770 lines) - LDM class
+
+**Priority Tasks**:
+- Improve main section headers with `Color::BOLD + Color::CYAN`
+- Remove thread IDs from meteorological loading messages
+- Consolidate `[EKI_ENSEMBLE]` → `[ENSEMBLE]`, reduce 10-line progress to 1 line
+- Wrap `[NaN_CHECK]` in `#ifdef DEBUG`
+- Replace hardcoded `[32m` → `Color::GREEN`
+
+**Function Documentation**: Add `@output` annotations to functions with console output
+
+---
+
+### **Session 2: C++ IPC & Support + Utilities** (~2,810 lines)
+
+IPC communication, VTK output, debugging support, and utility scripts
+
+**C++ Files**:
+1. `src/include/ldm_eki_ipc.cuh` (682 lines) - IPC communication
+2. `src/include/ldm_plot.cuh` (818 lines) - VTK output
+3. `src/include/memory_doctor.cuh` (251 lines) - Memory debugging
+4. `src/include/ldm_cram2.cuh` (232 lines) - CRAM system
+
+**Python Utility Files**:
+5. `util/cleanup.py` (308 lines) - Data cleanup
+6. `util/compare_all_receptors.py` (507 lines) - Visualization
+7. `util/compare_logs.py` (161 lines) - Log comparison
+8. `util/diagnose_convergence_issue.py` (152 lines) - Convergence diagnostics
+
+**Priority Tasks**:
+- Consolidate `[EKI_OBS]`, `[EKI_ENSEMBLE_OBS]` → `[ENSEMBLE]`
+- Simplify `[GPU_ALLOC]` → `[GPU]`, wrap `[GPU_VERIFY]` in `#ifdef DEBUG`
+- Add `[IPC]` tag with `Color::BLUE` for shared memory operations
+- Add `[SYSTEM]` tag with `Color::CYAN` for file operations (cleanup.py)
+- Improve Python utility output with colorama
+
+**Python Colors**: Use `from colorama import Fore, Style, init`
+
+---
+
+### **Session 3: Python EKI Framework** (~3,384 lines)
+
+Python inverse modeling algorithms and IPC
+
+**Files**:
+1. `src/eki/Model_Connection_np_Ensemble.py` (880 lines) - Forward model interface
+2. `src/eki/Optimizer_EKI_np.py` (594 lines) - Kalman inversion algorithms
+3. `src/eki/eki_ipc_reader.py` (399 lines) - IPC reader
+4. `src/eki/RunEstimator.py` (343 lines) - Main estimator
+5. `src/eki/eki_ipc_writer.py` (225 lines) - IPC writer
+6. `src/eki/memory_doctor.py` (213 lines) - Memory debugging
+7. `src/eki/Model_Connection_np.py` (171 lines) - Single model interface
+8. `src/eki/Model_Connection_GPU.py` (153 lines) - GPU model interface
+9. `src/eki/server.py` (36 lines) - Server (if used)
+
+**Priority Tasks** (CRITICAL):
+- **Reduce massive observation output**: 100+ lines per timestep → save to file + 1-line summary
+- Add colorama imports: `from colorama import Fore, Style, init; init(autoreset=True)`
+- Apply `[ENSEMBLE]` tag with `Fore.MAGENTA`
+- Apply `[ERROR]` tag with `Fore.RED + Style.BRIGHT`
+- Add success checkmarks: `Fore.GREEN + "✓ "`
+- Make errors actionable: add "→ Check if..." suggestions
+
+**Top Priority**: Reduce observation data output (target: 70% log file size reduction)
+
+---
+
+### Common Instructions (All Sessions)
+
+Read `OUTPUT_STYLE_GUIDE.md` and improve output messages in assigned files.
+
+**Phase 1 Tasks (Required)**:
+1. Remove deprecated tags: `[DEBUG_BLOCK*]`, `[DEBUG_ITER*]`, `[EKI_*]` variants
+2. Replace hardcoded ANSI codes with `Color::` constants
+3. Wrap verbose output in `#ifdef DEBUG`
+4. Improve progress indicators (10 lines → 1 line, use `\r`)
+
+**Phase 2 Tasks (Recommended)**:
+5. Add colors to tags
+6. Add checkmarks (✓)
+7. Emphasize keywords (numbers, file paths)
+8. Improve section headers
+
+**Important**: Improve readability without losing information.
+
+---
+
+### Coordination Notes
+
+- Each session works **independently** on its assigned files
+- All sessions reference the same `OUTPUT_STYLE_GUIDE.md`
+- Test locally before committing: `make clean && make && ./ldm-eki`
+- Commit format: `git commit -m "Refactor output: [Session X] [file list]"`
+- No merge conflicts expected (each session has distinct files)
+
+---
+
+### Progress Tracking
+
+After completing your session's work, update this checklist:
+
+**Session 1 (C++ Core)**:
+- [ ] `src/main_eki.cu`
+- [ ] `src/include/ldm_func.cuh`
+- [ ] `src/include/ldm_mdata.cuh`
+- [ ] `src/include/ldm_init.cuh`
+- [ ] `src/include/ldm.cuh`
+
+**Session 2 (C++ IPC & Utils)**:
+- [ ] `src/include/ldm_eki_ipc.cuh`
+- [ ] `src/include/ldm_plot.cuh`
+- [ ] `src/include/memory_doctor.cuh`
+- [ ] `src/include/ldm_cram2.cuh`
+- [ ] `util/cleanup.py`
+- [ ] `util/compare_all_receptors.py`
+- [ ] `util/compare_logs.py`
+- [ ] `util/diagnose_convergence_issue.py`
+
+**Session 3 (Python EKI)**:
+- [ ] `src/eki/Model_Connection_np_Ensemble.py`
+- [ ] `src/eki/Optimizer_EKI_np.py`
+- [ ] `src/eki/eki_ipc_reader.py`
+- [ ] `src/eki/RunEstimator.py`
+- [ ] `src/eki/eki_ipc_writer.py`
+- [ ] `src/eki/memory_doctor.py`
+- [ ] `src/eki/Model_Connection_np.py`
+- [ ] `src/eki/Model_Connection_GPU.py`
+- [ ] `src/eki/server.py`

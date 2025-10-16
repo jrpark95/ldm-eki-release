@@ -88,7 +88,7 @@ bool EKIReader::readEnsembleConfig(int& num_states, int& num_ensemble, int& time
 
     config_fd = open(shm_path, O_RDONLY);
     if (config_fd < 0) {
-        perror("[ERROR] Failed to open config");
+        fprintf(stderr, "%s[ERROR]%s ", Color::RED, Color::RESET); perror(" Failed to open config");
         return false;
     }
 
@@ -98,7 +98,7 @@ bool EKIReader::readEnsembleConfig(int& num_states, int& num_ensemble, int& time
     config_fd = -1;
 
     if (bytes_read != sizeof(config)) {
-        std::cerr << "[ERROR] Failed to read config (got " << bytes_read << " bytes)" << std::endl;
+        std::cerr << Color::RED << "[ERROR] " << Color::RESET << "Failed to read config (got " << bytes_read << " bytes)" << std::endl;
         return false;
     }
 
@@ -127,14 +127,14 @@ bool EKIReader::readEnsembleStates(std::vector<float>& output, int& num_states, 
 
     data_fd = open(shm_path, O_RDONLY);
     if (data_fd < 0) {
-        perror("[ERROR] Failed to open data");
+        fprintf(stderr, "%s[ERROR]%s ", Color::RED, Color::RESET); perror(" Failed to open data");
         return false;
     }
 
     // Get file size
     struct stat st;
     if (fstat(data_fd, &st) != 0) {
-        perror("[ERROR] fstat failed");
+        fprintf(stderr, "%s[ERROR]%s ", Color::RED, Color::RESET); perror(" fstat failed");
         close(data_fd);
         data_fd = -1;
         return false;
@@ -144,7 +144,7 @@ bool EKIReader::readEnsembleStates(std::vector<float>& output, int& num_states, 
     size_t expected_size = sizeof(EnsembleDataHeader) + num_states * num_ensemble * sizeof(float);
 
     if (file_size != expected_size) {
-        std::cerr << "[ERROR] Size mismatch: file=" << file_size
+        std::cerr << Color::RED << "[ERROR] " << Color::RESET << "Size mismatch: file=" << file_size
                   << " bytes, expected=" << expected_size << " bytes" << std::endl;
         close(data_fd);
         data_fd = -1;
@@ -154,7 +154,7 @@ bool EKIReader::readEnsembleStates(std::vector<float>& output, int& num_states, 
     // Map entire file
     data_map = mmap(nullptr, file_size, PROT_READ, MAP_SHARED, data_fd, 0);
     if (data_map == MAP_FAILED) {
-        perror("[ERROR] mmap failed");
+        fprintf(stderr, "%s[ERROR]%s ", Color::RED, Color::RESET); perror(" mmap failed");
         close(data_fd);
         data_fd = -1;
         return false;
@@ -164,7 +164,7 @@ bool EKIReader::readEnsembleStates(std::vector<float>& output, int& num_states, 
     auto* header = reinterpret_cast<EnsembleDataHeader*>(data_map);
 
     if (header->status != 1) {
-        std::cerr << "[ERROR] Data not ready (status=" << header->status << ")" << std::endl;
+        std::cerr << Color::RED << "[ERROR] " << Color::RESET << "Data not ready (status=" << header->status << ")" << std::endl;
         munmap(data_map, file_size);
         close(data_fd);
         data_map = nullptr;
@@ -173,7 +173,7 @@ bool EKIReader::readEnsembleStates(std::vector<float>& output, int& num_states, 
     }
 
     if (header->rows != num_states || header->cols != num_ensemble) {
-        std::cerr << "[ERROR] Dimension mismatch: header says " << header->rows
+        std::cerr << Color::RED << "[ERROR] " << Color::RESET << "Dimension mismatch: header says " << header->rows
                   << "×" << header->cols << ", config says " << num_states << "×" << num_ensemble << std::endl;
         munmap(data_map, file_size);
         close(data_fd);

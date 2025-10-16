@@ -40,7 +40,7 @@ bool LDM::loadSingleMeteoFile(int file_index, FlexPres*& pres_data, FlexUnis*& u
     hgt_data.resize(dimZ_GFS);
     
     if (!pres_data || !unis_data) {
-        std::cerr << "[ERROR] Memory allocation failed: " << filename << std::endl;
+        std::cerr << Color::RED << "[ERROR] " << Color::RESET << "Memory allocation failed: " << filename << std::endl;
         if (pres_data) delete[] pres_data;
         if (unis_data) delete[] unis_data;
         return false;
@@ -49,7 +49,7 @@ bool LDM::loadSingleMeteoFile(int file_index, FlexPres*& pres_data, FlexUnis*& u
     // Read meteorological data file
     std::ifstream file(filename, std::ios::binary);
     if (!file) {
-        std::cerr << "[ERROR] Failed to open file: " << filename << std::endl;
+        std::cerr << Color::RED << "[ERROR] " << Color::RESET << "Failed to open file: " << filename << std::endl;
         delete[] pres_data;
         delete[] unis_data;
         return false;
@@ -239,7 +239,7 @@ bool LDM::loadSingleMeteoFile(int file_index, FlexPres*& pres_data, FlexUnis*& u
     // Read height data
     std::ifstream hgt_file(hgt_filename, std::ios::binary);
     if (!hgt_file) {
-        std::cerr << "[ERROR] Failed to open height file: " << hgt_filename << std::endl;
+        std::cerr << Color::RED << "[ERROR] " << Color::RESET << "Failed to open height file: " << hgt_filename << std::endl;
         delete[] pres_data;
         delete[] unis_data;
         return false;
@@ -299,7 +299,7 @@ bool LDM::preloadAllEKIMeteorologicalData() {
     // Calculate required number of files
     int num_files = calculateRequiredMeteoFiles();
     if (num_files <= 0) {
-        std::cerr << "[ERROR] Invalid file count: " << num_files << std::endl;
+        std::cerr << Color::RED << "[ERROR] " << Color::RESET << "Invalid file count: " << num_files << std::endl;
         return false;
     }
 
@@ -345,7 +345,7 @@ bool LDM::preloadAllEKIMeteorologicalData() {
                           << completed_files.load() << "/" << g_eki_meteo.num_time_steps << ")" << std::endl;
             } else {
                 std::lock_guard<std::mutex> lock(completion_mutex);
-                std::cerr << "[ERROR] Failed to load file " << i << ".txt!" << std::endl;
+                std::cerr << Color::RED << "[ERROR] " << Color::RESET << "Failed to load file " << i << ".txt!" << std::endl;
             }
         });
     }
@@ -404,39 +404,39 @@ bool LDM::preloadAllEKIMeteorologicalData() {
     for (int i = 0; i < num_files; i++) {
         // Pres data
         if (cudaMalloc((void**)&temp_pres_ptrs[i], g_eki_meteo.pres_data_size) != cudaSuccess) {
-            std::cerr << "[ERROR] GPU Pres memory allocation failed (file " << i << ")" << std::endl;
+            std::cerr << Color::RED << "[ERROR] " << Color::RESET << "GPU Pres memory allocation failed (file " << i << ")" << std::endl;
             gpu_allocation_success = false;
             break;
         }
         if (cudaMemcpy(temp_pres_ptrs[i], g_eki_meteo.host_flex_pres_data[i], 
                        g_eki_meteo.pres_data_size, cudaMemcpyHostToDevice) != cudaSuccess) {
-            std::cerr << "[ERROR] GPU Pres data transfer failed (file " << i << ")" << std::endl;
+            std::cerr << Color::RED << "[ERROR] " << Color::RESET << "GPU Pres data transfer failed (file " << i << ")" << std::endl;
             gpu_allocation_success = false;
             break;
         }
         
         // Unis data
         if (cudaMalloc((void**)&temp_unis_ptrs[i], g_eki_meteo.unis_data_size) != cudaSuccess) {
-            std::cerr << "[ERROR] GPU Unis memory allocation failed (file " << i << ")" << std::endl;
+            std::cerr << Color::RED << "[ERROR] " << Color::RESET << "GPU Unis memory allocation failed (file " << i << ")" << std::endl;
             gpu_allocation_success = false;
             break;
         }
         if (cudaMemcpy(temp_unis_ptrs[i], g_eki_meteo.host_flex_unis_data[i], 
                        g_eki_meteo.unis_data_size, cudaMemcpyHostToDevice) != cudaSuccess) {
-            std::cerr << "[ERROR] GPU Unis data transfer failed (file " << i << ")" << std::endl;
+            std::cerr << Color::RED << "[ERROR] " << Color::RESET << "GPU Unis data transfer failed (file " << i << ")" << std::endl;
             gpu_allocation_success = false;
             break;
         }
         
         // Height data
         if (cudaMalloc((void**)&temp_hgt_ptrs[i], g_eki_meteo.hgt_data_size) != cudaSuccess) {
-            std::cerr << "[ERROR] GPU Height memory allocation failed (file " << i << ")" << std::endl;
+            std::cerr << Color::RED << "[ERROR] " << Color::RESET << "GPU Height memory allocation failed (file " << i << ")" << std::endl;
             gpu_allocation_success = false;
             break;
         }
         if (cudaMemcpy(temp_hgt_ptrs[i], g_eki_meteo.host_flex_hgt_data[i].data(), 
                        g_eki_meteo.hgt_data_size, cudaMemcpyHostToDevice) != cudaSuccess) {
-            std::cerr << "[ERROR] GPU Height data transfer failed (file " << i << ")" << std::endl;
+            std::cerr << Color::RED << "[ERROR] " << Color::RESET << "GPU Height data transfer failed (file " << i << ")" << std::endl;
             gpu_allocation_success = false;
             break;
         }
@@ -489,7 +489,7 @@ bool LDM::preloadAllEKIMeteorologicalData() {
     
     if (err_alloc1 != cudaSuccess || err_alloc2 != cudaSuccess || 
         err_alloc3 != cudaSuccess || err_alloc4 != cudaSuccess) {
-        std::cerr << "[ERROR] Failed to allocate existing LDM GPU memory slots" << std::endl;
+        std::cerr << Color::RED << "[ERROR] " << Color::RESET << "Failed to allocate existing LDM GPU memory slots" << std::endl;
         std::cerr << "  device_meteorological_flex_pres0: " << cudaGetErrorString(err_alloc1) << std::endl;
         std::cerr << "  device_meteorological_flex_unis0: " << cudaGetErrorString(err_alloc2) << std::endl;
         std::cerr << "  device_meteorological_flex_pres1: " << cudaGetErrorString(err_alloc3) << std::endl;

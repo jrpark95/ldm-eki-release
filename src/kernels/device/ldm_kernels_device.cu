@@ -154,17 +154,8 @@ __global__ void update_particle_flags(
         // Activate particles based on their timeidx and current activationRatio
         int maxActiveTimeidx = int(num_particles * activationRatio);
 
-        // Debug first particle activation decision
-        if (idx == 0) {
-            printf("[GPU_ACTIVATION] Particle 0: timeidx=%d, maxActiveTimeidx=%d, should_activate=%d, current_flag=%d\n",
-                   p.timeidx, maxActiveTimeidx, (p.timeidx <= maxActiveTimeidx) ? 1 : 0, p.flag);
-        }
-
         if (p.timeidx <= maxActiveTimeidx){  // Changed from idx to p.timeidx
             p.flag = 1;
-            if (idx == 0) {
-                printf("[GPU_ACTIVATION] Particle 0: flag SET to 1\n");
-            }
         }
     }
 

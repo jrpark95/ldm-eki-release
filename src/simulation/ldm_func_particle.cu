@@ -9,7 +9,7 @@
 
 void LDM::allocateGPUMemory(){
         if (part.empty()) {
-            std::cerr << "[ERROR] No particles to copy to device (part vector is empty)" << std::endl;
+            std::cerr << Color::RED << "[ERROR] " << Color::RESET << "No particles to copy to device (part vector is empty)" << std::endl;
             return;
         }
 
@@ -20,17 +20,17 @@ void LDM::allocateGPUMemory(){
 
         cudaError_t err = cudaMalloc((void**)&d_part, total_size);
         if (err != cudaSuccess){
-            std::cerr << "[ERROR] Failed to allocate device memory for particles: " << cudaGetErrorString(err) << std::endl;
+            std::cerr << Color::RED << "[ERROR] " << Color::RESET << "Failed to allocate device memory for particles: " << cudaGetErrorString(err) << std::endl;
             size_t free_mem, total_mem;
             cudaMemGetInfo(&free_mem, &total_mem);
-            std::cerr << "[ERROR] GPU memory info - Free: " << free_mem/(1024*1024) << " MB, Total: " << total_mem/(1024*1024) << " MB" << std::endl;
-            std::cerr << "[ERROR] Requested: " << total_size/(1024*1024) << " MB" << std::endl;
+            std::cerr << Color::RED << "[ERROR] " << Color::RESET << "GPU memory info - Free: " << free_mem/(1024*1024) << " MB, Total: " << total_mem/(1024*1024) << " MB" << std::endl;
+            std::cerr << Color::RED << "[ERROR] " << Color::RESET << "Requested: " << total_size/(1024*1024) << " MB" << std::endl;
             exit(EXIT_FAILURE);
         }
 
         err = cudaMemcpy(d_part, part.data(), total_size, cudaMemcpyHostToDevice);
         if (err != cudaSuccess){
-            std::cerr << "[ERROR] Failed to copy particle data from host to device: " << cudaGetErrorString(err) << std::endl;
+            std::cerr << Color::RED << "[ERROR] " << Color::RESET << "Failed to copy particle data from host to device: " << cudaGetErrorString(err) << std::endl;
             cudaFree(d_part);
             exit(EXIT_FAILURE);
         }

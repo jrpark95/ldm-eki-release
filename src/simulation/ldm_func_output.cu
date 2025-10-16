@@ -33,7 +33,8 @@ void LDM::initializeEKIObservationSystem() {
     std::cout << "Initializing observation system..." << std::endl;
     
     if (g_eki.receptor_locations.empty()) {
-        std::cerr << "[ERROR] No receptor locations loaded for EKI observation system" << std::endl;
+        std::cerr << Color::RED << "[ERROR] " << Color::RESET
+                  << "No receptor locations loaded for EKI observation system" << std::endl;
         return;
     }
     
@@ -277,7 +278,8 @@ void LDM::saveEKIObservationResults() {
     
     std::ofstream file("logs/eki_receptor_observations.txt");
     if (!file.is_open()) {
-        std::cerr << "[ERROR] Could not open logs/eki_receptor_observations.txt for writing" << std::endl;
+        std::cerr << Color::RED << "[ERROR] " << Color::RESET
+                  << "Could not open logs/eki_receptor_observations.txt for writing" << std::endl;
         return;
     }
     
@@ -362,9 +364,10 @@ void LDM::computeReceptorObservations_AllEnsembles(int timestep, float currentTi
 
     // Verify ensemble dose memory is initialized
     if (d_ensemble_dose == nullptr) {
-        std::cerr << "[ERROR] Ensemble dose memory not initialized!" << std::endl;
-        std::cerr << "       This should have been allocated in initializeEKIObservationSystem()" << std::endl;
-        std::cerr << "       Attempting emergency allocation..." << std::endl;
+        std::cerr << Color::RED << "[ERROR] " << Color::RESET
+                  << "Ensemble dose memory not initialized!" << std::endl;
+        std::cerr << "         This should have been allocated in initializeEKIObservationSystem()" << std::endl;
+        std::cerr << "         Attempting emergency allocation..." << std::endl;
 
         int ensemble_dose_size = num_ensembles * num_receptors * num_timesteps;
         cudaMalloc(&d_ensemble_dose, ensemble_dose_size * sizeof(float));
@@ -700,7 +703,8 @@ void LDM::saveGridReceptorData() {
 
         std::ofstream outfile(filename.str());
         if (!outfile.is_open()) {
-            std::cerr << "[ERROR] Could not open file: " << filename.str() << std::endl;
+            std::cerr << Color::RED << "[ERROR] " << Color::RESET
+                      << "Could not open file: " << filename.str() << std::endl;
             continue;
         }
 

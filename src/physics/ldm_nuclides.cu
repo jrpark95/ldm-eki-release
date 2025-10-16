@@ -1,5 +1,6 @@
 // ldm_nuclides.cu - Nuclide Configuration Implementation
 #include "ldm_nuclides.cuh"
+#include "../colors.h"
 
 // ============================================================================
 // Static Member Initialization
@@ -39,7 +40,7 @@ NuclideConfig* NuclideConfig::getInstance() {
 bool NuclideConfig::loadFromFile(const std::string& filename) {
     std::ifstream file(filename);
     if (!file.is_open()) {
-        std::cerr << "[ERROR] Cannot open nuclides config file: " << filename << std::endl;
+        std::cerr << Color::RED << "[ERROR] " << Color::RESET << "Cannot open nuclides config file: " << filename << std::endl;
         return false;
     }
 
@@ -66,7 +67,7 @@ bool NuclideConfig::loadFromFile(const std::string& filename) {
                 decay_const_from_file = std::stof(decay_str);
                 ratio = std::stof(ratio_str);
             } catch (const std::exception& e) {
-                std::cerr << "[ERROR] Failed to parse numeric values from line: " << line << std::endl;
+                std::cerr << Color::RED << "[ERROR] " << Color::RESET << "Failed to parse numeric values from line: " << line << std::endl;
                 continue;
             }
 
@@ -96,7 +97,7 @@ bool NuclideConfig::loadFromFile(const std::string& filename) {
     num_nuclides = nuclides.size();
 
     if (num_nuclides == 0) {
-        std::cerr << "[ERROR] No nuclides loaded from config file" << std::endl;
+        std::cerr << Color::RED << "[ERROR] " << Color::RESET << "No nuclides loaded from config file" << std::endl;
         return false;
     }
 
@@ -141,7 +142,7 @@ bool NuclideConfig::copyToDevice() {
     // Allocate device memory
     cudaError_t err = cudaMalloc(&d_decay_constants, num_nuclides * sizeof(float));
     if (err != cudaSuccess) {
-        std::cerr << "[ERROR] Failed to allocate device memory for decay constants: "
+        std::cerr << Color::RED << "[ERROR] " << Color::RESET << "Failed to allocate device memory for decay constants: "
                  << cudaGetErrorString(err) << std::endl;
         return false;
     }
@@ -150,7 +151,7 @@ bool NuclideConfig::copyToDevice() {
     err = cudaMemcpy(d_decay_constants, decay_constants.data(),
                     num_nuclides * sizeof(float), cudaMemcpyHostToDevice);
     if (err != cudaSuccess) {
-        std::cerr << "[ERROR] Failed to copy decay constants to device: "
+        std::cerr << Color::RED << "[ERROR] " << Color::RESET << "Failed to copy decay constants to device: "
                  << cudaGetErrorString(err) << std::endl;
         cudaFree(d_decay_constants);
         d_decay_constants = nullptr;

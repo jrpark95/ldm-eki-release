@@ -227,7 +227,8 @@ void LDM::runSimulation_eki(){
 
     // EKI mode: Check meteorological data preloading
     if (!g_eki_meteo.is_initialized) {
-        std::cerr << "[ERROR] EKI meteorological data not initialized. Call preloadAllEKIMeteorologicalData() first." << std::endl;
+        std::cerr << Color::RED << "[ERROR] " << Color::RESET
+                  << "EKI meteorological data not initialized. Call preloadAllEKIMeteorologicalData() first." << std::endl;
         return;
     }
     std::cout << "\nEKI simulation starting - using preloaded meteorological data\n" << std::endl;
@@ -320,7 +321,8 @@ void LDM::runSimulation_eki(){
             // CRITICAL FIX: Copy height data to GPU constant memory
             cudaError_t hgt_err = cudaMemcpyToSymbol(d_flex_hgt, flex_hgt.data(), sizeof(float) * dimZ_GFS);
             if (hgt_err != cudaSuccess) {
-                printf("[ERROR] Failed to copy height data to GPU: %s\n", cudaGetErrorString(hgt_err));
+                fprintf(stderr, "%s[ERROR]%s Failed to copy height data to GPU: %s\n",
+                        Color::RED, Color::RESET, cudaGetErrorString(hgt_err));
             }
         }
 
@@ -599,7 +601,8 @@ void LDM::runSimulation_eki_dump(){
 
     // EKI mode: Check meteorological data preloading
     if (!g_eki_meteo.is_initialized) {
-        std::cerr << "[ERROR] EKI meteorological data not initialized. Call preloadAllEKIMeteorologicalData() first." << std::endl;
+        std::cerr << Color::RED << "[ERROR] " << Color::RESET
+                  << "EKI meteorological data not initialized. Call preloadAllEKIMeteorologicalData() first." << std::endl;
         return;
     }
     std::cout << "\nEKI simulation starting - using preloaded meteorological data\n" << std::endl;
@@ -692,7 +695,8 @@ void LDM::runSimulation_eki_dump(){
             // CRITICAL FIX: Copy height data to GPU constant memory
             cudaError_t hgt_err = cudaMemcpyToSymbol(d_flex_hgt, flex_hgt.data(), sizeof(float) * dimZ_GFS);
             if (hgt_err != cudaSuccess) {
-                printf("[ERROR] Failed to copy height data to GPU: %s\n", cudaGetErrorString(hgt_err));
+                fprintf(stderr, "%s[ERROR]%s Failed to copy height data to GPU: %s\n",
+                        Color::RED, Color::RESET, cudaGetErrorString(hgt_err));
             }
         }
 

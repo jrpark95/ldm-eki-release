@@ -157,10 +157,10 @@ __global__ void move_part_by_wind_mpi(
         float drho_100 = device_meteorological_flex_pres0[(xidx+1) * dimY_GFS * dimZ_GFS + (yidx) * dimZ_GFS + (zidx)].DRHO;
         
         if (idx == 0 && isnan(drho_000)) {
-            printf("[DRHO_DEBUG] DRHO_000 is NaN at indices [%d,%d,%d,%d]\n", xidx, yidx, zidx, 0);
+// printf("[DRHO_DEBUG] DRHO_000 is NaN at indices [%d,%d,%d,%d]\n", xidx, yidx, zidx, 0);
         }
         if (idx == 0 && isnan(drho_100)) {
-            printf("[DRHO_DEBUG] DRHO_100 is NaN at indices [%d,%d,%d,%d]\n", xidx+1, yidx, zidx, 0);
+// printf("[DRHO_DEBUG] DRHO_100 is NaN at indices [%d,%d,%d,%d]\n", xidx+1, yidx, zidx, 0);
         }
         
         float drho_raw = x1*y1*z1*t1*device_meteorological_flex_pres0[(xidx) * dimY_GFS * dimZ_GFS + (yidx) * dimZ_GFS + (zidx)].DRHO
@@ -227,18 +227,7 @@ __global__ void move_part_by_wind_mpi(
         met_p1[6] = device_meteorological_flex_pres1[(safe_xidx) * dimY_GFS * dimZ_GFS + (safe_yidx+1) * dimZ_GFS + (safe_zidx+1)];
         met_p1[7] = device_meteorological_flex_pres1[(safe_xidx+1) * dimY_GFS * dimZ_GFS + (safe_yidx+1) * dimZ_GFS + (safe_zidx+1)];
         
-        // GPU meteorological data debug - check actual values from GPU memory
-        if (idx == 0) {
-            static int gpu_meteo_debug = 0;
-            if (gpu_meteo_debug < 2) {
-                printf("[GPU_METEO] Particle 0 at indices (xidx=%d, yidx=%d, zidx=%d, t0=%.3f):\n",
-                       safe_xidx, safe_yidx, safe_zidx, t0);
-                printf("  met_p0[0].UU=%.3f VV=%.3f WW=%.3f\n", met_p0[0].UU, met_p0[0].VV, met_p0[0].WW);
-                printf("  met_p0[1].UU=%.3f VV=%.3f WW=%.3f\n", met_p0[1].UU, met_p0[1].VV, met_p0[1].WW);
-                printf("  met_p1[0].UU=%.3f VV=%.3f WW=%.3f\n", met_p1[0].UU, met_p1[0].VV, met_p1[0].WW);
-                gpu_meteo_debug++;
-            }
-        }
+        // GPU meteorological data debug - disabled for release (log file only)
 
         float temp = x1*y1*z1*t1*met_p0[0].TT + x0*y1*z1*t1*met_p0[1].TT + x1*y0*z1*t1*met_p0[2].TT + x0*y0*z1*t1*met_p0[3].TT
                     +x1*y1*z0*t1*met_p0[4].TT + x0*y1*z0*t1*met_p0[5].TT + x1*y0*z0*t1*met_p0[6].TT + x0*y0*z0*t1*met_p0[7].TT
@@ -260,26 +249,7 @@ __global__ void move_part_by_wind_mpi(
                      +x1*y1*z1*t0*met_p1[0].WW + x0*y1*z1*t0*met_p1[1].WW + x1*y0*z1*t0*met_p1[2].WW + x0*y0*z1*t0*met_p1[3].WW
                      +x1*y1*z0*t0*met_p1[4].WW + x0*y1*z0*t0*met_p1[5].WW + x1*y0*z0*t0*met_p1[6].WW + x0*y0*z0*t0*met_p1[7].WW;
 
-        // Debug wind calculation for NaN tracking
-        if (idx == 0) {
-            static int wind_debug_count = 0;
-            if (wind_debug_count < 3) {
-                printf("[WIND_CALC] Particle 0: xwind=%.6f, ywind=%.6f, zwind=%.6f (NaN: x=%d, y=%d, z=%d)\n", 
-                       xwind, ywind, zwind, isnan(xwind), isnan(ywind), isnan(zwind));
-                wind_debug_count++;
-            }
-        }
-
-        // Critical debug: Only check for first timestep NaN issue
-        if (idx == 0) {
-            static int debug_count = 0;
-            if (debug_count < 3) {
-                printf("[CRITICAL] Particle 0: p.x=%.3f, p.y=%.3f, p.z=%.3f -> x1=%.3f, y1=%.3f, z1=%.3f -> xwind=%.3f\n", 
-                       p.x, p.y, p.z, x1, y1, z1, xwind);
-                printf("[DEBUG_Z_AFTER_CRITICAL] Particle 0: p.z=%.6f (NaN=%d)\n", p.z, isnan(p.z));
-                debug_count++;
-            }
-        }
+        // Debug wind and critical checks (disabled)
 
 
 
@@ -588,15 +558,7 @@ __global__ void move_part_by_wind_mpi(
                 rw = exp(-ks.delta_time/Tw);
                 float old_wp = p.wp;
                 p.wp = (rw*p.wp + curand_normal_double(&ss)*sqrt(1.0-rw*rw)*wsig + Tw*(1.0-rw)*(dsw2+drho/rho*wsig*wsig))*p.dir;
-                
-                if (idx == 0) {
-                    static int wp_debug_count = 0;
-                    if (wp_debug_count < 3) {
-                        printf("[WP_CALC] Particle 0: Tw=%.6f, rw=%.6f, old_wp=%.6f, wsig=%.6f, dsw2=%.6f, drho=%.6f, rho=%.6f, p.dir=%d, new_wp=%.6f (NaN=%d)\n", 
-                               Tw, rw, old_wp, wsig, dsw2, drho, rho, p.dir, p.wp, isnan(p.wp));
-                        wp_debug_count++;
-                    }
-                }
+                // Debug wp calculation (disabled)
             }
             
 
@@ -606,39 +568,18 @@ __global__ void move_part_by_wind_mpi(
                 p.dir = -1;
                 float old_z = p.z;
                 p.z = -p.z - p.wp*ks.delta_time;
-                if (idx == 0) {
-                    static int reflect_debug1 = 0;
-                    if (reflect_debug1 < 3) {
-                        printf("[Z_REFLECT1] Particle 0: old_z=%.6f, wp=%.6f, dt=%.6f, new_z=%.6f (NaN=%d)\n", 
-                               old_z, p.wp, ks.delta_time, p.z, isnan(p.z));
-                        reflect_debug1++;
-                    }
-                }
+                // Debug z reflection (disabled)
             }
             else if (p.wp*ks.delta_time > (hmix-p.z)){
                 p.dir = -1;
                 float old_z = p.z;
                 p.z = -p.z - p.wp*ks.delta_time + 2.*hmix;
-                if (idx == 0) {
-                    static int reflect_debug2 = 0;
-                    if (reflect_debug2 < 3) {
-                        printf("[Z_REFLECT2] Particle 0: old_z=%.6f, wp=%.6f, dt=%.6f, hmix=%.6f, new_z=%.6f (NaN=%d)\n", 
-                               old_z, p.wp, ks.delta_time, hmix, p.z, isnan(p.z));
-                        reflect_debug2++;
-                    }
-                }
+                // Debug z reflection (disabled)
             }
             else{
                 p.dir = 1;
                 p.z = p.z + p.wp*ks.delta_time;
-                if (idx == 0) {
-                    static int reflect_debug3 = 0;
-                    if (reflect_debug3 < 3) {
-                        printf("[Z_NORMAL] Particle 0: old_z=%.6f, wp=%.6f, dt=%.6f, new_z=%.6f (NaN=%d)\n", 
-                               p.z - p.wp*ks.delta_time, p.wp, ks.delta_time, p.z, isnan(p.z));
-                        reflect_debug3++;
-                    }
-                }
+                // Debug z normal update (disabled)
             }
 
 
@@ -652,15 +593,7 @@ __global__ void move_part_by_wind_mpi(
             float old_z_zwind = p.z;
             p.z += zwind*ks.delta_time;
             
-            // Debug first particle z update for NaN tracking
-            if (idx == 0) {
-                static int z_debug_count = 0;
-                if (z_debug_count < 3) {
-                    printf("[Z_UPDATE1] Particle 0: old_z=%.6f, zwind=%.6f, dt=%.6f, new_z=%.6f (NaN=%d)\n", 
-                           old_z_zwind, zwind, ks.delta_time, p.z, isnan(p.z));
-                    z_debug_count++;
-                }
-            }
+            // Debug first particle z update for NaN tracking (disabled)
 
         }
         else{
@@ -710,27 +643,12 @@ __global__ void move_part_by_wind_mpi(
             float old_z_strat = p.z;
             p.z += (zwind+uz)*ks.delta_time;
             
-            // Debug second particle z update for NaN tracking
-            if (idx == 0) {
-                static int z_debug_count2 = 0;
-                if (z_debug_count2 < 3) {
-                    printf("[Z_UPDATE2] Particle 0: old_z=%.6f, zwind=%.6f, uz=%.6f, dt=%.6f, new_z=%.6f (NaN=%d)\n", 
-                           old_z_strat, zwind, uz, ks.delta_time, p.z, isnan(p.z));
-                    z_debug_count2++;
-                }
-            }
+            // Debug second particle z update for NaN tracking (disabled)
             
             if(p.z<0.0) {
                 float old_z_neg = p.z;
                 p.z=-p.z;
-                if (idx == 0) {
-                    static int z_debug_count3 = 0;
-                    if (z_debug_count3 < 3) {
-                        printf("[Z_UPDATE3] Particle 0: negative z correction: %.6f -> %.6f (NaN=%d)\n", 
-                               old_z_neg, p.z, isnan(p.z));
-                        z_debug_count3++;
-                    }
-                }
+                // Debug negative z correction (disabled)
             }
 
         }
@@ -903,7 +821,7 @@ __global__ void move_part_by_wind_mpi(
         if (idx == 0) {
             static int final_debug_count = 0;
             if (final_debug_count < 5) {
-                printf("[FINAL] Particle 0: z=%.3f (NaN=%d)\n", p.z, isnan(p.z));
+// printf("[FINAL] Particle 0: z=%.3f (NaN=%d)\n", p.z, isnan(p.z));
                 final_debug_count++;
             }
         }

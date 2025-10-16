@@ -158,10 +158,10 @@ __global__ void move_part_by_wind_mpi_ens(
         float drho_100 = device_meteorological_flex_pres0[(xidx+1) * dimY_GFS * dimZ_GFS + (yidx) * dimZ_GFS + (zidx)].DRHO;
         
         if (idx == 0 && isnan(drho_000)) {
-            printf("[DRHO_DEBUG] DRHO_000 is NaN at indices [%d,%d,%d,%d]\n", xidx, yidx, zidx, 0);
+// printf("[DRHO_DEBUG] DRHO_000 is NaN at indices [%d,%d,%d,%d]\n", xidx, yidx, zidx, 0);
         }
         if (idx == 0 && isnan(drho_100)) {
-            printf("[DRHO_DEBUG] DRHO_100 is NaN at indices [%d,%d,%d,%d]\n", xidx+1, yidx, zidx, 0);
+// printf("[DRHO_DEBUG] DRHO_100 is NaN at indices [%d,%d,%d,%d]\n", xidx+1, yidx, zidx, 0);
         }
         
         float drho_raw = x1*y1*z1*t1*device_meteorological_flex_pres0[(xidx) * dimY_GFS * dimZ_GFS + (yidx) * dimZ_GFS + (zidx)].DRHO

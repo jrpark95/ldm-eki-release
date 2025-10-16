@@ -10,12 +10,12 @@
 
 void LDM::initializeParticles(){
     if (concentrations.empty()) {
-        std::cerr << "[ERROR] No concentrations data loaded for particle initialization" << std::endl;
+        std::cerr << Color::RED << "[ERROR] " << Color::RESET << "No concentrations data loaded for particle initialization" << std::endl;
         return;
     }
     
     if (sources.empty()) {
-        std::cerr << "[ERROR] No sources data loaded for particle initialization" << std::endl;
+        std::cerr << Color::RED << "[ERROR] " << Color::RESET << "No sources data loaded for particle initialization" << std::endl;
         return;
     }
     
@@ -30,7 +30,7 @@ void LDM::initializeParticles(){
     int particle_count = 0;
     for (const auto& conc : concentrations) {
         if (conc.location - 1 >= sources.size()) {
-            std::cerr << "[ERROR] Invalid source location index: " << conc.location << " (max: " << sources.size() << ")" << std::endl;
+            std::cerr << Color::RED << "[ERROR] " << Color::RESET << "Invalid source location index: " << conc.location << " (max: " << sources.size() << ")" << std::endl;
             continue;
         }
 
@@ -81,12 +81,12 @@ void LDM::initializeParticles(){
 void LDM::initializeParticlesEKI(){
     // EKI mode particle initialization using true_emissions from g_eki
     if (g_eki.true_emissions.empty()) {
-        std::cerr << "[ERROR] No true_emissions data loaded for EKI particle initialization" << std::endl;
+        std::cerr << Color::RED << "[ERROR] " << Color::RESET << "No true_emissions data loaded for EKI particle initialization" << std::endl;
         return;
     }
     
     if (sources.empty()) {
-        std::cerr << "[ERROR] No sources data loaded for EKI particle initialization" << std::endl;
+        std::cerr << Color::RED << "[ERROR] " << Color::RESET << "No sources data loaded for EKI particle initialization" << std::endl;
         return;
     }
     
@@ -177,7 +177,7 @@ void LDM::initializeParticlesEKI_AllEnsembles(float* ensemble_states, int num_en
     // ensemble_states: [num_ensembles × num_timesteps] matrix (e.g., 100×24)
 
     if (sources.empty()) {
-        std::cerr << "[ERROR] No sources data loaded for EKI ensemble initialization" << std::endl;
+        std::cerr << Color::RED << "[ERROR] " << Color::RESET << "No sources data loaded for EKI ensemble initialization" << std::endl;
         return;
     }
 

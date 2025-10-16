@@ -24,7 +24,7 @@ int main(int argc, char** argv) {
 
     // Parse command line arguments
     if (argc != 3) {
-        std::cerr << "[ERROR] Usage: " << argv[0] << " <grid_count> <grid_spacing>" << std::endl;
+        std::cerr << Color::RED << "[ERROR] " << Color::RESET << "Usage: " << argv[0] << " <grid_count> <grid_spacing>" << std::endl;
         std::cerr << "  grid_count: Number of receptors in each direction from source (e.g., 5)" << std::endl;
         std::cerr << "  grid_spacing: Distance between receptors in degrees (e.g., 0.1)" << std::endl;
         std::cerr << "  Example: " << argv[0] << " 5 0.1" << std::endl;
@@ -37,12 +37,12 @@ int main(int argc, char** argv) {
 
     // Validate arguments
     if (grid_count <= 0 || grid_count > 20) {
-        std::cerr << "[ERROR] grid_count must be between 1 and 20 (got " << grid_count << ")" << std::endl;
+        std::cerr << Color::RED << "[ERROR] " << Color::RESET << "grid_count must be between 1 and 20 (got " << grid_count << ")" << std::endl;
         return 1;
     }
 
     if (grid_spacing <= 0.0f || grid_spacing > 1.0f) {
-        std::cerr << "[ERROR] grid_spacing must be between 0.0 and 1.0 degrees (got " << grid_spacing << ")" << std::endl;
+        std::cerr << Color::RED << "[ERROR] " << Color::RESET << "grid_spacing must be between 0.0 and 1.0 degrees (got " << grid_spacing << ")" << std::endl;
         return 1;
     }
 
@@ -63,7 +63,7 @@ int main(int argc, char** argv) {
     std::string nuclide_config_file = "./input/nuclides_config_1.txt";
 
     if (!nucConfig->loadFromFile(nuclide_config_file)) {
-        std::cerr << "[ERROR] Failed to load nuclide configuration" << std::endl;
+        std::cerr << Color::RED << "[ERROR] " << Color::RESET << "Failed to load nuclide configuration" << std::endl;
         return 1;
     }
 
@@ -82,7 +82,7 @@ int main(int argc, char** argv) {
     // Initialize CRAM system with A60.csv matrix (after configuration is loaded)
     std::cout << "[DEBUG] Initializing CRAM system..." << std::endl;
     if (!ldm.initialize_cram_system("./cram/A60.csv")) {
-        std::cerr << "[ERROR] CRAM system initialization failed" << std::endl;
+        std::cerr << Color::RED << "[ERROR] " << Color::RESET << "CRAM system initialization failed" << std::endl;
         return 1;
     }
     std::cout << "[DEBUG] CRAM system initialization completed" << std::endl;

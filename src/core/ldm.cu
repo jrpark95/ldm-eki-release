@@ -175,10 +175,10 @@ void EKIMeteorologicalData::cleanup() {
         }
 
     } catch (const std::exception& e) {
-        std::cerr << "[ERROR] Exception during memory cleanup: " << e.what() << std::endl;
+        std::cerr << Color::RED << "[ERROR] " << Color::RESET << "Exception during memory cleanup: " << e.what() << std::endl;
         is_initialized = false;
     } catch (...) {
-        std::cerr << "[ERROR] Unknown exception during memory cleanup" << std::endl;
+        std::cerr << Color::RED << "[ERROR] " << Color::RESET << "Unknown exception during memory cleanup" << std::endl;
         is_initialized = false;
     }
 }

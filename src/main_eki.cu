@@ -3,6 +3,7 @@
 #include "ipc/ldm_eki_reader.cuh"
 #include "ipc/ldm_eki_writer.cuh"
 #include "debug/memory_doctor.cuh"
+#include "simulation/ldm_func_output.cuh"
 #include "colors.h"
 
 // Standard library includes
@@ -24,8 +25,11 @@
 int g_num_nuclides;  // Default value, updated from nuclide config
 int g_turb_switch;    // Default values, overwritten by setting.txt
 int g_drydep;
-int g_wetdep; 
+int g_wetdep;
 int g_raddecay;
+
+// Log file handle (global for cross-compilation-unit access)
+std::ofstream* g_log_file = nullptr;
 
 int main(int argc, char** argv) {
 
@@ -137,19 +141,30 @@ int main(int argc, char** argv) {
     std::cout.rdbuf(&tee_cout);
     std::cerr.rdbuf(&tee_cerr);
 
-    // Create log-only output stream (not shown in terminal)
-    static std::ostream logonly(&log_strip_cout);
+    // Point global log file handle to this log file
+    g_log_file = &logFile;
+
+    // Test log-only stream immediately
+    if (g_log_file && g_log_file->is_open()) {
+        *g_log_file << "[TEST] g_log_file initialized successfully\n";
+        g_log_file->flush();
+    }
+
+    // Test cross-compilation-unit access
+    test_g_logonly_from_output_module();
 
     std::cout << Color::CYAN << "[SYSTEM] " << Color::RESET
               << "Logging to " << Color::BOLD << "logs/ldm_eki_simulation.log" << Color::RESET << "\n" << std::endl;
 
     // Log-only: detailed startup information
-    logonly << "\n========================================\n";
-    logonly << "LDM-EKI Detailed Simulation Log\n";
-    logonly << "========================================\n";
-    logonly << "Start time: " << std::chrono::system_clock::now().time_since_epoch().count() << "\n";
-    logonly << "Working directory: " << getenv("PWD") << "\n";
-    logonly << "========================================\n\n";
+    if (g_log_file) {
+        *g_log_file << "\n========================================\n";
+        *g_log_file << "LDM-EKI Detailed Simulation Log\n";
+        *g_log_file << "========================================\n";
+        *g_log_file << "Start time: " << std::chrono::system_clock::now().time_since_epoch().count() << "\n";
+        *g_log_file << "Working directory: " << getenv("PWD") << "\n";
+        *g_log_file << "========================================\n\n";
+    }
 
     // Load nuclide configuration
     NuclideConfig* nucConfig = NuclideConfig::getInstance();
@@ -165,17 +180,17 @@ int main(int argc, char** argv) {
     g_num_nuclides = nucConfig->getNumNuclides();
 
     // Log-only: nuclide configuration details
-    logonly << "[CONFIG] Nuclide configuration loaded successfully\n";
-    logonly << "  Number of nuclides: " << g_num_nuclides << "\n";
-    logonly << "  Configuration file: " << nuclide_config_file << "\n\n";
+    *g_log_file << "[CONFIG] Nuclide configuration loaded successfully\n";
+    *g_log_file << "  Number of nuclides: " << g_num_nuclides << "\n";
+    *g_log_file << "  Configuration file: " << nuclide_config_file << "\n\n";
 
     LDM ldm;
 
     ldm.loadSimulationConfiguration();
 
     // Log-only: simulation configuration details
-    logonly << "[CONFIG] Simulation configuration loaded\n";
-    logonly << "  Physics switches: TURB=" << g_turb_switch
+    *g_log_file << "[CONFIG] Simulation configuration loaded\n";
+    *g_log_file << "  Physics switches: TURB=" << g_turb_switch
             << " DRYDEP=" << g_drydep
             << " WETDEP=" << g_wetdep
             << " RADDECAY=" << g_raddecay << "\n\n";
@@ -240,7 +255,7 @@ int main(int argc, char** argv) {
 
     // Enable VTK output for single mode run
     ldm.enable_vtk_output = true;
-    std::cout << "[VTK] Output enabled for single mode run" << std::endl;
+    std::cout << Color::MAGENTA << "[VTK] " << Color::RESET << "Output enabled for single mode run" << std::endl;
 
     // Run EKI simulation with preloaded meteorological data
     std::cout << "\nRunning forward simulation..." << std::endl;
@@ -360,10 +375,10 @@ int main(int argc, char** argv) {
         }
 
         // Log-only: detailed ensemble data received info
-        logonly << "\n[ITERATION " << current_iteration << "] Ensemble data received from Python\n";
-        logonly << "  Dimensions: " << num_states << " states × " << num_ensemble << " members\n";
-        logonly << "  Total values: " << ensemble_data.size() << "\n";
-        logonly << "  Memory size: " << (ensemble_data.size() * sizeof(float) / 1024.0) << " KB\n";
+        *g_log_file << "\n[ITERATION " << current_iteration << "] Ensemble data received from Python\n";
+        *g_log_file << "  Dimensions: " << num_states << " states × " << num_ensemble << " members\n";
+        *g_log_file << "  Total values: " << ensemble_data.size() << "\n";
+        *g_log_file << "  Memory size: " << (ensemble_data.size() * sizeof(float) / 1024.0) << " KB\n";
 
         // Calculate statistics
         float min_val = *std::min_element(ensemble_data.begin(), ensemble_data.end());
@@ -462,7 +477,8 @@ int main(int argc, char** argv) {
         // ========================================================================
         // Ensemble Mode: Initialize particles with ensemble states
         // ========================================================================
-        std::cout << "\n[ENSEMBLE] Preparing ensemble simulation for iteration " << current_iteration << std::endl;
+        std::cout << "\n" << Color::YELLOW << "[ENSEMBLE] " << Color::RESET
+                  << "Preparing ensemble simulation for iteration " << current_iteration << std::endl;
 
         // Data format conversion: Python sends [state0_ens0, state0_ens1, ..., state1_ens0, ...]
         // We need: [ens0_state0, ens0_state1, ..., ens1_state0, ...] for row-major ensemble matrix
@@ -532,9 +548,11 @@ int main(int argc, char** argv) {
             ldm.selected_ensemble_ids.clear();
             ldm.selected_ensemble_ids.push_back(7);
 
-            std::cout << "[ENSEMBLE] Mode configured: " << num_ensemble << " ensembles, "
+            std::cout << Color::YELLOW << "[ENSEMBLE] " << Color::RESET
+                      << "Mode configured: " << num_ensemble << " ensembles, "
                       << num_timesteps << " observation timesteps" << std::endl;
-            std::cout << "[ENSEMBLE] Selected ensemble 7 for VTK output (fixed)" << std::endl;
+            std::cout << Color::YELLOW << "[ENSEMBLE] " << Color::RESET
+                      << "Selected ensemble 7 for VTK output (fixed)" << std::endl;
 
             // First time: cleanup single mode and initialize ensemble mode observation system
             ldm.cleanupEKIObservationSystem();
@@ -544,15 +562,17 @@ int main(int argc, char** argv) {
         // Enable VTK output ONLY on the final iteration for performance
         if (current_iteration == max_iterations) {
             ldm.enable_vtk_output = true;
-            std::cout << "[VTK] Output enabled for final iteration " << current_iteration << std::endl;
-            std::cout << Color::CYAN << "[VTK] " << Color::RESET
+            std::cout << Color::MAGENTA << "[VTK] " << Color::RESET
+                      << "Output enabled for final iteration " << current_iteration << std::endl;
+            std::cout << Color::MAGENTA << "[VTK] " << Color::RESET
                       << "Ensemble output parallelization: " << Color::BOLD << "50" << Color::RESET << " threads\n";
-            std::cout << Color::CYAN << "[VTK] " << Color::RESET
+            std::cout << Color::MAGENTA << "[VTK] " << Color::RESET
                       << "Selected ensemble for output: " << Color::BOLD
                       << ldm.selected_ensemble_ids[0] << Color::RESET << std::endl;
         } else {
             ldm.enable_vtk_output = false;
-            std::cout << "[VTK] Output disabled for iteration " << current_iteration << " (performance optimization)" << std::endl;
+            std::cout << Color::MAGENTA << "[VTK] " << Color::RESET
+                      << "Output disabled for iteration " << current_iteration << " (performance optimization)" << std::endl;
         }
 
         // Clear previous particles for reinitialization
@@ -593,12 +613,15 @@ int main(int argc, char** argv) {
         // Verify particle count after initialization
         if (current_iteration == 1) {
             size_t expected_particles = static_cast<size_t>(num_ensemble) * num_states * (10000 / 24);
-            std::cout << "[ENSEMBLE] Total particles after initialization: " << ldm.part.size() << std::endl;
-            std::cout << "[ENSEMBLE] Expected particles: ~" << expected_particles
+            std::cout << Color::YELLOW << "[ENSEMBLE] " << Color::RESET
+                      << "Total particles after initialization: " << ldm.part.size() << std::endl;
+            std::cout << Color::YELLOW << "[ENSEMBLE] " << Color::RESET
+                      << "Expected particles: ~" << expected_particles
                       << " (" << num_ensemble << " ensembles × " << num_states
                       << " states × " << (10000/24) << " particles/state)" << std::endl;
         } else {
-            std::cout << "[ENSEMBLE] Particles reinitialized: " << ldm.part.size() << std::endl;
+            std::cout << Color::YELLOW << "[ENSEMBLE] " << Color::RESET
+                      << "Particles reinitialized: " << ldm.part.size() << std::endl;
         }
 
         if (ldm.part.size() == 0) {
@@ -623,7 +646,8 @@ int main(int argc, char** argv) {
         ldm.resetEKIObservationSystemForNewIteration();
 
     // Run ensemble simulation
-    std::cout << "\n[ENSEMBLE] Starting forward simulation..." << std::endl;
+    std::cout << "\n" << Color::YELLOW << "[ENSEMBLE] " << Color::RESET
+              << "Starting forward simulation..." << std::endl;
     ldm.startTimer();
     ldm.runSimulation_eki();
     ldm.stopTimer();
@@ -633,7 +657,8 @@ int main(int argc, char** argv) {
     // ========================================================================
     // Send ensemble observations back to Python
     // ========================================================================
-    std::cout << "[ENSEMBLE] Preparing to send observations to Python..." << std::endl;
+    std::cout << Color::YELLOW << "[ENSEMBLE] " << Color::RESET
+              << "Preparing to send observations to Python..." << std::endl;
 
     // Format: [num_ensemble × num_receptors × num_timesteps]
     // Python expects: flat array that can be reshaped to (num_ensemble, num_receptors, num_timesteps)
@@ -674,7 +699,7 @@ int main(int argc, char** argv) {
             break;
         }
 
-    std::cout << Color::BLUE << "[IPC] " << Color::RESET << "Sent observations to Python: "
+    std::cout << Color::CYAN << "[IPC] " << Color::RESET << "Sent observations to Python: "
               << Color::BOLD << "[" << num_ensemble << " × " << eki_config.num_receptors
               << " × " << num_timesteps << "]" << Color::RESET
               << " (" << total_obs_elements << " values)" << std::endl;
@@ -683,11 +708,11 @@ int main(int argc, char** argv) {
               << "/" << max_iterations << " completed" << Color::RESET << "\n" << std::endl;
 
         // Log-only: iteration summary
-        logonly << "[ITERATION " << current_iteration << "] Completed successfully\n";
-        logonly << "  Observations sent: " << total_obs_elements << " values\n";
-        logonly << "  Observation range: [" << *std::min_element(flat_ensemble_observations.begin(), flat_ensemble_observations.end())
+        *g_log_file << "[ITERATION " << current_iteration << "] Completed successfully\n";
+        *g_log_file << "  Observations sent: " << total_obs_elements << " values\n";
+        *g_log_file << "  Observation range: [" << *std::min_element(flat_ensemble_observations.begin(), flat_ensemble_observations.end())
                 << ", " << *std::max_element(flat_ensemble_observations.begin(), flat_ensemble_observations.end()) << "]\n";
-        logonly << "----------------------------------------\n\n";
+        *g_log_file << "----------------------------------------\n\n";
 
     } // End of iteration loop
 

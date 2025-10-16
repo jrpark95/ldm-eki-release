@@ -14,3 +14,6 @@
 
 // Forward declaration only - method declarations are in ldm.cuh
 class LDM;
+
+// Test function to verify g_logonly cross-compilation-unit access
+void test_g_logonly_from_output_module();

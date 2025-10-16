@@ -171,6 +171,10 @@ extern ConfigReader g_config;
 extern EKIMeteorologicalData g_eki_meteo;
 extern std::vector<float> flex_hgt;
 
+// Log file handle (declared in main_eki.cu)
+// Other modules can write directly to this for log-only output
+extern std::ofstream* g_log_file;
+
 // 물리/격자 상수 정리 (계산 로직 변경 없음)
 namespace Constants {
     // 격자 상수

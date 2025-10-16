@@ -173,10 +173,11 @@ __global__ void update_particle_flags_ens(
         }
 
         // DEBUG: Print activation info for particle 832 when activationRatio > 0.08
-        if (idx == 832 && activationRatio > 0.08 && activationRatio < 0.15) {
-            printf("[GPU_FLAG_ENS_T60] idx=%d, local_idx=%d, maxActive=%d, timeidx=%d, flag=%d (ratio=%.4f)\n",
-                   idx, local_idx, maxActiveInEnsemble, p.timeidx, p.flag, activationRatio);
-        }
+        // Commented out for release - uncomment for debugging
+        // if (idx == 832 && activationRatio > 0.08 && activationRatio < 0.15) {
+        //     printf("[GPU_FLAG_ENS_T60] idx=%d, local_idx=%d, maxActive=%d, timeidx=%d, flag=%d (ratio=%.4f)\n",
+        //            idx, local_idx, maxActiveInEnsemble, p.timeidx, p.flag, activationRatio);
+        // }
     }
 
 // ============================================================================

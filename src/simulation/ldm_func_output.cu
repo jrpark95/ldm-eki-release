@@ -5,7 +5,16 @@
 
 #include "../core/ldm.cuh"
 #include "ldm_func_output.cuh"
-#include "colors.h"
+#include "../colors.h"
+
+// Test function to verify g_log_file works across compilation units
+void test_g_logonly_from_output_module() {
+    extern std::ofstream* g_log_file;
+    if (g_log_file && g_log_file->is_open()) {
+        *g_log_file << "[TEST_FROM_OUTPUT_MODULE] g_log_file accessible from ldm_func_output.cu\n";
+        g_log_file->flush();
+    }
+}
 
 void LDM::startTimer(){
         
@@ -125,6 +134,13 @@ void LDM::computeReceptorObservations(int timestep, float currentTime) {
     // timestep 19-27 → time_idx = 2 (ALL accumulate to third observation)
     int time_idx = (timestep - 1) / timesteps_per_observation;
 
+    // Log-only debug: function called trace
+    extern std::ofstream* g_log_file;
+    if (g_log_file && g_log_file->is_open() && timestep <= 10) {
+        *g_log_file << "[DEBUG] computeReceptorObservations: timestep=" << timestep
+                   << ", time=" << currentTime << "s, time_idx=" << time_idx << "\n";
+    }
+
     int max_observations = static_cast<int>(time_end / eki_interval_seconds);
     if (time_idx >= max_observations) {
         return;
@@ -168,6 +184,14 @@ void LDM::computeReceptorObservations(int timestep, float currentTime) {
 
     cudaDeviceSynchronize();
 
+    // Log-only debug: kernel execution completed (single mode)
+    if (g_log_file && g_log_file->is_open() && timestep % timesteps_per_observation == 0) {
+        *g_log_file << "[DEBUG] Single mode kernel executed for time_idx=" << time_idx
+                   << " (observation boundary at timestep " << timestep << ")\n";
+        *g_log_file << "  Particle count: " << nop << "\n";
+        *g_log_file << "  Receptor count: " << num_receptors << "\n";
+    }
+
     // Only copy results at observation boundaries (timesteps 9, 18, 27, ...)
     if (timestep % timesteps_per_observation == 0) {
         // Copy accumulated results for this time_idx
@@ -189,15 +213,31 @@ void LDM::computeReceptorObservations(int timestep, float currentTime) {
         // Store time for the PREVIOUS period (matching reference)
         eki_observation_times.push_back(currentTime - eki_interval_seconds);
 
-        // Output observation data for Python visualization parser
-        std::cout << "[EKI_OBS] Observation " << (time_idx + 1)
-                  << " at t=" << (int)currentTime << "s:";
-        for (int r = 0; r < num_receptors; r++) {
-            std::cout << " R" << (r+1) << "="
-                      << std::scientific << host_dose[r]
-                      << "(" << host_particle_count[r] << "p)";
+        // Log-only debug: show captured data statistics
+        if (g_log_file && g_log_file->is_open()) {
+            *g_log_file << "[DEBUG] Captured data for time_idx=" << time_idx << ":\n";
+            *g_log_file << "  Doses: ";
+            for (int r = 0; r < num_receptors; r++) {
+                *g_log_file << host_dose[r] << " ";
+            }
+            *g_log_file << "\n  Particle counts: ";
+            for (int r = 0; r < num_receptors; r++) {
+                *g_log_file << host_particle_count[r] << " ";
+            }
+            *g_log_file << "\n";
         }
-        std::cout << std::endl;
+
+        // Output observation data for Python visualization parser (log file only, not terminal)
+        if (g_log_file && g_log_file->is_open()) {
+            *g_log_file << "[EKI_OBS] Observation " << (time_idx + 1)
+                      << " at t=" << (int)currentTime << "s:";
+            for (int r = 0; r < num_receptors; r++) {
+                *g_log_file << " R" << (r+1) << "="
+                          << std::scientific << host_dose[r]
+                          << "(" << host_particle_count[r] << "p)";
+            }
+            *g_log_file << std::endl;
+        }
     }
 }
 
@@ -281,6 +321,13 @@ void LDM::computeReceptorObservations_AllEnsembles(int timestep, float currentTi
     // timestep 19-27 → time_idx = 2 (ALL accumulate to third observation)
     int time_idx = (timestep - 1) / timesteps_per_observation;
 
+    // Log-only debug: function called trace (ensemble mode)
+    extern std::ofstream* g_log_file;
+    if (g_log_file && g_log_file->is_open() && timestep <= 10) {
+        *g_log_file << "[DEBUG] computeReceptorObservations_AllEnsembles: timestep=" << timestep
+                   << ", time=" << currentTime << "s, time_idx=" << time_idx << "\n";
+    }
+
     if (time_idx >= num_timesteps) {
         return;
     }
@@ -337,6 +384,15 @@ void LDM::computeReceptorObservations_AllEnsembles(int timestep, float currentTi
 
     cudaDeviceSynchronize();
 
+    // Log-only debug: kernel execution completed (ensemble mode)
+    if (g_log_file && g_log_file->is_open() && timestep % timesteps_per_observation == 0) {
+        *g_log_file << "[DEBUG] Ensemble kernel executed for time_idx=" << time_idx
+                   << " (observation boundary at timestep " << timestep << ")\n";
+        *g_log_file << "  Ensemble count: " << num_ensembles << "\n";
+        *g_log_file << "  Total particles: " << total_particles << "\n";
+        *g_log_file << "  Receptor count: " << num_receptors << "\n";
+    }
+
     // Only copy results at observation boundaries (timesteps 9, 18, 27, ...)
     if (timestep % timesteps_per_observation == 0) {
         // Copy results back to host
@@ -361,20 +417,49 @@ void LDM::computeReceptorObservations_AllEnsembles(int timestep, float currentTi
             }
         }
 
-        // Output ensemble average particle counts for Python visualization parser
-        // Calculate mean particle count across all ensembles
-        std::cout << "[EKI_ENSEMBLE_OBS] obs" << (time_idx + 1)
-                  << " at t=" << (int)currentTime << "s:";
-        for (int r = 0; r < num_receptors; r++) {
-            // Calculate mean particle count for this receptor across all ensembles
-            double mean_count = 0.0;
-            for (int ens = 0; ens < num_ensembles; ens++) {
-                mean_count += eki_ensemble_particle_counts[ens][time_idx][r];
+        // Log-only debug: show ensemble statistics
+        if (g_log_file && g_log_file->is_open()) {
+            *g_log_file << "[DEBUG] Ensemble captured data for time_idx=" << time_idx << ":\n";
+
+            // Show first ensemble's values as sample
+            *g_log_file << "  First ensemble doses: ";
+            for (int r = 0; r < num_receptors; r++) {
+                *g_log_file << eki_ensemble_observations[0][time_idx][r] << " ";
             }
-            mean_count /= num_ensembles;
-            std::cout << " R" << (r+1) << "=" << (int)mean_count << "p";
+            *g_log_file << "\n  First ensemble counts: ";
+            for (int r = 0; r < num_receptors; r++) {
+                *g_log_file << eki_ensemble_particle_counts[0][time_idx][r] << " ";
+            }
+            *g_log_file << "\n";
+
+            // Calculate and show mean values across all ensembles
+            *g_log_file << "  Mean doses across ensembles: ";
+            for (int r = 0; r < num_receptors; r++) {
+                double mean_dose = 0.0;
+                for (int ens = 0; ens < num_ensembles; ens++) {
+                    mean_dose += eki_ensemble_observations[ens][time_idx][r];
+                }
+                mean_dose /= num_ensembles;
+                *g_log_file << mean_dose << " ";
+            }
+            *g_log_file << "\n";
         }
-        std::cout << std::endl;
+
+        // Output ensemble average particle counts for Python visualization parser (log file only, not terminal)
+        if (g_log_file && g_log_file->is_open()) {
+            *g_log_file << "[EKI_ENSEMBLE_OBS] obs" << (time_idx + 1)
+                      << " at t=" << (int)currentTime << "s:";
+            for (int r = 0; r < num_receptors; r++) {
+                // Calculate mean particle count for this receptor across all ensembles
+                double mean_count = 0.0;
+                for (int ens = 0; ens < num_ensembles; ens++) {
+                    mean_count += eki_ensemble_particle_counts[ens][time_idx][r];
+                }
+                mean_count /= num_ensembles;
+                *g_log_file << " R" << (r+1) << "=" << (int)mean_count << "p";
+            }
+            *g_log_file << std::endl;
+        }
     }
 }
 

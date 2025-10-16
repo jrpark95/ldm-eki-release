@@ -20,10 +20,10 @@ wet_deposition_model: 0
 radioactive_decay_model: 0
 
 # FILE PATHS #
-input_base_path: ./data/input/
+input_base_path: ./input/
 output_base_path: ./output/
-ldaps_data_path: ./data/input/ldapsdata/
-gfs_data_path: ./data/input/gfsdata/
+ldaps_data_path: ./input/ldapsdata/
+gfs_data_path: ./input/gfsdata/
 flexprewind_path: ../gfsdata/0p5/
 grid_output_path: ./grids
 grid_csv_output_path: ./grids_csv

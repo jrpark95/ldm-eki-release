@@ -24,7 +24,7 @@ EKIReader::~EKIReader() {
 // ============================================================================
 
 bool EKIReader::waitForEnsembleData(int timeout_seconds, int expected_iteration) {
-    std::cout << Color::BLUE << "[IPC] " << Color::RESET
+    std::cout << Color::CYAN << "[IPC] " << Color::RESET
               << "Waiting for ensemble data from Python (timeout: "
               << Color::BOLD << timeout_seconds << "s" << Color::RESET << ")...\n";
 
@@ -106,7 +106,7 @@ bool EKIReader::readEnsembleConfig(int& num_states, int& num_ensemble, int& time
     num_ensemble = config.num_ensemble;
     timestep_id = config.timestep_id;
 
-    std::cout << Color::BLUE << "[IPC] " << Color::RESET
+    std::cout << Color::CYAN << "[IPC] " << Color::RESET
               << "Config loaded: " << Color::BOLD << num_states << "×" << num_ensemble << Color::RESET
               << " (timestep " << timestep_id << ")\n";
     return true;
@@ -197,7 +197,7 @@ bool EKIReader::readEnsembleStates(std::vector<float>& output, int& num_states, 
     float sum = std::accumulate(output.begin(), output.end(), 0.0f);
     float mean_val = sum / data_count;
 
-    std::cout << Color::BLUE << "[IPC] " << Color::RESET
+    std::cout << Color::CYAN << "[IPC] " << Color::RESET
               << "Ensemble states loaded: " << Color::BOLD << num_states << "×" << num_ensemble << Color::RESET
               << " (" << data_count * sizeof(float) / 1024.0 << " KB)\n";
     std::cout << "  Range : [" << min_val << ", " << max_val << "], mean=" << mean_val << "\n";
@@ -245,7 +245,7 @@ void EKIReader::cleanup() {
 void EKIReader::unlinkEnsembleSharedMemory() {
     shm_unlink(SHM_ENSEMBLE_CONFIG_NAME);
     shm_unlink(SHM_ENSEMBLE_DATA_NAME);
-    std::cout << Color::BLUE << "[IPC] " << Color::RESET
+    std::cout << Color::CYAN << "[IPC] " << Color::RESET
               << "Ensemble shared memory unlinked\n";
 }
 

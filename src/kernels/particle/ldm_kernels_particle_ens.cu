@@ -249,26 +249,26 @@ __global__ void move_part_by_wind_mpi_ens(
                      +x1*y1*z1*t0*met_p1[0].WW + x0*y1*z1*t0*met_p1[1].WW + x1*y0*z1*t0*met_p1[2].WW + x0*y0*z1*t0*met_p1[3].WW
                      +x1*y1*z0*t0*met_p1[4].WW + x0*y1*z0*t0*met_p1[5].WW + x1*y0*z0*t0*met_p1[6].WW + x0*y0*z0*t0*met_p1[7].WW;
 
-        // Debug wind calculation for NaN tracking
-        if (idx == 0) {
-            static int wind_debug_count = 0;
-            if (wind_debug_count < 3) {
-                printf("[WIND_CALC] Particle 0: xwind=%.6f, ywind=%.6f, zwind=%.6f (NaN: x=%d, y=%d, z=%d)\n", 
-                       xwind, ywind, zwind, isnan(xwind), isnan(ywind), isnan(zwind));
-                wind_debug_count++;
-            }
-        }
+        // Debug wind calculation - Commented out for release
+        // if (idx == 0) {
+        //     static int wind_debug_count = 0;
+        //     if (wind_debug_count < 3) {
+        //         printf("[WIND_CALC] Particle 0: xwind=%.6f, ywind=%.6f, zwind=%.6f (NaN: x=%d, y=%d, z=%d)\n",
+        //                xwind, ywind, zwind, isnan(xwind), isnan(ywind), isnan(zwind));
+        //         wind_debug_count++;
+        //     }
+        // }
 
-        // Critical debug: Only check for first timestep NaN issue
-        if (idx == 0) {
-            static int debug_count = 0;
-            if (debug_count < 3) {
-                printf("[CRITICAL] Particle 0: p.x=%.3f, p.y=%.3f, p.z=%.3f -> x1=%.3f, y1=%.3f, z1=%.3f -> xwind=%.3f\n", 
-                       p.x, p.y, p.z, x1, y1, z1, xwind);
-                printf("[DEBUG_Z_AFTER_CRITICAL] Particle 0: p.z=%.6f (NaN=%d)\n", p.z, isnan(p.z));
-                debug_count++;
-            }
-        }
+        // Critical debug - Commented out for release
+        // if (idx == 0) {
+        //     static int debug_count = 0;
+        //     if (debug_count < 3) {
+        //         printf("[CRITICAL] Particle 0: p.x=%.3f, p.y=%.3f, p.z=%.3f -> x1=%.3f, y1=%.3f, z1=%.3f -> xwind=%.3f\n",
+        //                p.x, p.y, p.z, x1, y1, z1, xwind);
+        //         printf("[DEBUG_Z_AFTER_CRITICAL] Particle 0: p.z=%.6f (NaN=%d)\n", p.z, isnan(p.z));
+        //         debug_count++;
+        //     }
+        // }
 
 
 
@@ -578,14 +578,15 @@ __global__ void move_part_by_wind_mpi_ens(
                 float old_wp = p.wp;
                 p.wp = (rw*p.wp + curand_normal_double(&ss)*sqrt(1.0-rw*rw)*wsig + Tw*(1.0-rw)*(dsw2+drho/rho*wsig*wsig))*p.dir;
                 
-                if (idx == 0) {
-                    static int wp_debug_count = 0;
-                    if (wp_debug_count < 3) {
-                        printf("[WP_CALC] Particle 0: Tw=%.6f, rw=%.6f, old_wp=%.6f, wsig=%.6f, dsw2=%.6f, drho=%.6f, rho=%.6f, p.dir=%d, new_wp=%.6f (NaN=%d)\n", 
-                               Tw, rw, old_wp, wsig, dsw2, drho, rho, p.dir, p.wp, isnan(p.wp));
-                        wp_debug_count++;
-                    }
-                }
+                // WP_CALC debug - Commented out for release
+                // if (idx == 0) {
+                //     static int wp_debug_count = 0;
+                //     if (wp_debug_count < 3) {
+                //         printf("[WP_CALC] Particle 0: Tw=%.6f, rw=%.6f, old_wp=%.6f, wsig=%.6f, dsw2=%.6f, drho=%.6f, rho=%.6f, p.dir=%d, new_wp=%.6f (NaN=%d)\n",
+                //                Tw, rw, old_wp, wsig, dsw2, drho, rho, p.dir, p.wp, isnan(p.wp));
+                //         wp_debug_count++;
+                //     }
+                // }
             }
             
 
@@ -595,39 +596,42 @@ __global__ void move_part_by_wind_mpi_ens(
                 p.dir = -1;
                 float old_z = p.z;
                 p.z = -p.z - p.wp*d_dt;
-                if (idx == 0) {
-                    static int reflect_debug1 = 0;
-                    if (reflect_debug1 < 3) {
-                        printf("[Z_REFLECT1] Particle 0: old_z=%.6f, wp=%.6f, dt=%.6f, new_z=%.6f (NaN=%d)\n", 
-                               old_z, p.wp, d_dt, p.z, isnan(p.z));
-                        reflect_debug1++;
-                    }
-                }
+                // Z_REFLECT1 debug - Commented out for release
+                // if (idx == 0) {
+                //     static int reflect_debug1 = 0;
+                //     if (reflect_debug1 < 3) {
+                //         printf("[Z_REFLECT1] Particle 0: old_z=%.6f, wp=%.6f, dt=%.6f, new_z=%.6f (NaN=%d)\n",
+                //                old_z, p.wp, d_dt, p.z, isnan(p.z));
+                //         reflect_debug1++;
+                //     }
+                // }
             }
             else if (p.wp*d_dt > (hmix-p.z)){
                 p.dir = -1;
                 float old_z = p.z;
                 p.z = -p.z - p.wp*d_dt + 2.*hmix;
-                if (idx == 0) {
-                    static int reflect_debug2 = 0;
-                    if (reflect_debug2 < 3) {
-                        printf("[Z_REFLECT2] Particle 0: old_z=%.6f, wp=%.6f, dt=%.6f, hmix=%.6f, new_z=%.6f (NaN=%d)\n", 
-                               old_z, p.wp, d_dt, hmix, p.z, isnan(p.z));
-                        reflect_debug2++;
-                    }
-                }
+                // Z_REFLECT2 debug - Commented out for release
+                // if (idx == 0) {
+                //     static int reflect_debug2 = 0;
+                //     if (reflect_debug2 < 3) {
+                //         printf("[Z_REFLECT2] Particle 0: old_z=%.6f, wp=%.6f, dt=%.6f, hmix=%.6f, new_z=%.6f (NaN=%d)\n",
+                //                old_z, p.wp, d_dt, hmix, p.z, isnan(p.z));
+                //         reflect_debug2++;
+                //     }
+                // }
             }
             else{
                 p.dir = 1;
                 p.z = p.z + p.wp*d_dt;
-                if (idx == 0) {
-                    static int reflect_debug3 = 0;
-                    if (reflect_debug3 < 3) {
-                        printf("[Z_NORMAL] Particle 0: old_z=%.6f, wp=%.6f, dt=%.6f, new_z=%.6f (NaN=%d)\n", 
-                               p.z - p.wp*d_dt, p.wp, d_dt, p.z, isnan(p.z));
-                        reflect_debug3++;
-                    }
-                }
+                // Z_NORMAL debug - Commented out for release
+                // if (idx == 0) {
+                //     static int reflect_debug3 = 0;
+                //     if (reflect_debug3 < 3) {
+                //         printf("[Z_NORMAL] Particle 0: old_z=%.6f, wp=%.6f, dt=%.6f, new_z=%.6f (NaN=%d)\n",
+                //                p.z - p.wp*d_dt, p.wp, d_dt, p.z, isnan(p.z));
+                //         reflect_debug3++;
+                //     }
+                // }
             }
 
 
@@ -641,15 +645,15 @@ __global__ void move_part_by_wind_mpi_ens(
             float old_z_zwind = p.z;
             p.z += zwind*d_dt;
             
-            // Debug first particle z update for NaN tracking
-            if (idx == 0) {
-                static int z_debug_count = 0;
-                if (z_debug_count < 3) {
-                    printf("[Z_UPDATE1] Particle 0: old_z=%.6f, zwind=%.6f, dt=%.6f, new_z=%.6f (NaN=%d)\n", 
-                           old_z_zwind, zwind, d_dt, p.z, isnan(p.z));
-                    z_debug_count++;
-                }
-            }
+            // Z_UPDATE1 debug - Commented out for release
+            // if (idx == 0) {
+            //     static int z_debug_count = 0;
+            //     if (z_debug_count < 3) {
+            //         printf("[Z_UPDATE1] Particle 0: old_z=%.6f, zwind=%.6f, dt=%.6f, new_z=%.6f (NaN=%d)\n",
+            //                old_z_zwind, zwind, d_dt, p.z, isnan(p.z));
+            //         z_debug_count++;
+            //     }
+            // }
 
         }
         else{
@@ -699,27 +703,28 @@ __global__ void move_part_by_wind_mpi_ens(
             float old_z_strat = p.z;
             p.z += (zwind+uz)*d_dt;
             
-            // Debug second particle z update for NaN tracking
-            if (idx == 0) {
-                static int z_debug_count2 = 0;
-                if (z_debug_count2 < 3) {
-                    printf("[Z_UPDATE2] Particle 0: old_z=%.6f, zwind=%.6f, uz=%.6f, dt=%.6f, new_z=%.6f (NaN=%d)\n", 
-                           old_z_strat, zwind, uz, d_dt, p.z, isnan(p.z));
-                    z_debug_count2++;
-                }
-            }
-            
+            // Z_UPDATE2 debug - Commented out for release
+            // if (idx == 0) {
+            //     static int z_debug_count2 = 0;
+            //     if (z_debug_count2 < 3) {
+            //         printf("[Z_UPDATE2] Particle 0: old_z=%.6f, zwind=%.6f, uz=%.6f, dt=%.6f, new_z=%.6f (NaN=%d)\n",
+            //                old_z_strat, zwind, uz, d_dt, p.z, isnan(p.z));
+            //         z_debug_count2++;
+            //     }
+            // }
+
             if(p.z<0.0) {
                 float old_z_neg = p.z;
                 p.z=-p.z;
-                if (idx == 0) {
-                    static int z_debug_count3 = 0;
-                    if (z_debug_count3 < 3) {
-                        printf("[Z_UPDATE3] Particle 0: negative z correction: %.6f -> %.6f (NaN=%d)\n", 
-                               old_z_neg, p.z, isnan(p.z));
-                        z_debug_count3++;
-                    }
-                }
+                // Z_UPDATE3 debug - Commented out for release
+                // if (idx == 0) {
+                //     static int z_debug_count3 = 0;
+                //     if (z_debug_count3 < 3) {
+                //         printf("[Z_UPDATE3] Particle 0: negative z correction: %.6f -> %.6f (NaN=%d)\n",
+                //                old_z_neg, p.z, isnan(p.z));
+                //         z_debug_count3++;
+                //     }
+                // }
             }
 
         }
@@ -888,19 +893,19 @@ __global__ void move_part_by_wind_mpi_ens(
         p.v_wind = isnan(ywind) ? 0.0f : ywind;
         p.w_wind = isnan(zwind) ? 0.0f : zwind;
 
-        // Final debug only for critical check
-        if (idx == 0) {
-            static int final_debug_count = 0;
-            if (final_debug_count < 5) {
-                printf("[FINAL] Particle 0: z=%.3f (NaN=%d)\n", p.z, isnan(p.z));
-                final_debug_count++;
-            }
-        }
+        // FINAL debug - Commented out for release
+        // if (idx == 0) {
+        //     static int final_debug_count = 0;
+        //     if (final_debug_count < 5) {
+        //         printf("[FINAL] Particle 0: z=%.3f (NaN=%d)\n", p.z, isnan(p.z));
+        //         final_debug_count++;
+        //     }
+        // }
 
-        // DEBUG: Check concentrations for first 3 particles on EVERY kernel execution
-        if (idx < 3) {
-            printf("[GPU_ENS_INIT] P%d (ens=%d, timeidx=%d, flag=%d): conc=%.3e, conc[0]=%.3e, sum=%.3e\n",
-                   idx, p.ensemble_id, p.timeidx, p.flag, p.conc, p.concentrations[0], total);
-        }
+        // GPU_ENS_INIT debug - Commented out for release (causes massive output flood)
+        // if (idx < 3) {
+        //     printf("[GPU_ENS_INIT] P%d (ens=%d, timeidx=%d, flag=%d): conc=%.3e, conc[0]=%.3e, sum=%.3e\n",
+        //            idx, p.ensemble_id, p.timeidx, p.flag, p.conc, p.concentrations[0], total);
+        // }
 
 }

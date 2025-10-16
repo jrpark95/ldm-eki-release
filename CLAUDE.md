@@ -538,3 +538,42 @@ nvidia-smi
 - ✅ 로그 파일: 색상 코드 없는 읽기 쉬운 순수 텍스트
 - ✅ 디버그: 로그에만 추가 정보 기록
 - ✅ 성능: 동기화된 스트림으로 안정적 작동
+
+### 관측 로깅 시스템 수정 (2025-10-16)
+
+**문제**: 모듈화 리팩토링 후 `[EKI_OBS]`와 `[EKI_ENSEMBLE_OBS]` 로그 태그가 손실되어 시각화 스크립트(`util/compare_all_receptors.py`)가 데이터 파싱 불가
+
+**원인**:
+- 초기 접근: `std::ostream* g_logonly` 포인터가 로컬 스트림 객체를 참조
+- 로컬 streambuf가 다른 컴파일 유닛에서 접근 불가
+- 포인터는 공유되지만 실제 스트림 작동하지 않음
+
+**해결 방안**:
+- **전역 로그 파일 포인터로 변경**: `std::ostream* g_logonly` → `std::ofstream* g_log_file`
+- **파일 스코프 전역 변수 정의** (`src/main_eki.cu:32`):
+  ```cpp
+  std::ofstream* g_log_file = nullptr;
+  ```
+- **extern 선언으로 컴파일 유닛 간 공유** (`src/core/ldm.cuh:174-176`):
+  ```cpp
+  extern std::ofstream* g_log_file;
+  ```
+- **관측 함수에서 로그 기록** (`src/simulation/ldm_func_output.cu`):
+  - `computeReceptorObservations()`: `[EKI_OBS]` 태그 출력
+  - `computeReceptorObservations_AllEnsembles()`: `[EKI_ENSEMBLE_OBS]` 태그 출력
+  - 디버그 정보: 함수 호출 추적, 커널 실행 확인, 데이터 통계
+
+**검증**:
+- ✅ 크로스 컴파일 유닛 테스트 함수로 접근성 확인
+- ✅ `[DEBUG]`, `[EKI_OBS]`, `[EKI_ENSEMBLE_OBS]` 태그 모두 로그 파일에 출력
+- ✅ Python 시각화 스크립트가 로그 파싱 가능
+
+**영향받은 파일**:
+- `src/core/ldm.cuh` - 전역 포인터 extern 선언
+- `src/main_eki.cu` - 전역 포인터 정의 및 초기화
+- `src/simulation/ldm_func_output.cu` - 관측 로깅 구현
+- `src/simulation/ldm_func_output.cuh` - 테스트 함수 선언
+
+**남은 이슈**:
+- ⚠️ 모든 관측값이 0 (입자가 수용체에 도달하지 않음)
+- 이는 로깅 문제가 아닌 물리/시뮬레이션 설정 문제로 별도 조사 필요

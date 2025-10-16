@@ -17,13 +17,45 @@ ConfigReader g_config;
 EKIMeteorologicalData g_eki_meteo;
 std::vector<float> flex_hgt;
 
+// Log-only output stream (initialized in main_eki.cu)
+std::ostream* g_logonly = nullptr;
+
 // ============================================================================
 // LDM Class Constructor and Destructor
 // ============================================================================
 
-LDM::LDM() {
-    // Constructor implementation
-    // Initialize member variables as needed
+LDM::LDM()
+    : is_ensemble_mode(false)
+    , ensemble_size(0)
+    , ensemble_num_states(0)
+    , enable_vtk_output(false)
+    , is_grid_receptor_mode(false)
+    , grid_count(0)
+    , grid_spacing(0.0f)
+    , grid_receptor_total(0)
+    , eki_observation_count(0)
+    , d_part(nullptr)
+    , d_grid_receptor_lats(nullptr)
+    , d_grid_receptor_lons(nullptr)
+    , d_grid_receptor_dose(nullptr)
+    , d_grid_receptor_particle_count(nullptr)
+    , d_receptor_lats(nullptr)
+    , d_receptor_lons(nullptr)
+    , d_receptor_dose(nullptr)
+    , d_receptor_particle_count(nullptr)
+    , d_ensemble_dose(nullptr)
+    , d_ensemble_particle_count(nullptr)
+    , device_meteorological_data_pres(nullptr)
+    , device_meteorological_data_unis(nullptr)
+    , device_meteorological_data_etas(nullptr)
+    , device_meteorological_flex_pres0(nullptr)
+    , device_meteorological_flex_pres1(nullptr)
+    , device_meteorological_flex_pres2(nullptr)
+    , device_meteorological_flex_unis0(nullptr)
+    , device_meteorological_flex_unis1(nullptr)
+    , device_meteorological_flex_unis2(nullptr)
+{
+    // Constructor implementation - initialize member variables
 }
 
 LDM::~LDM() {

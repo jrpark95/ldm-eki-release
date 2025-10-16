@@ -137,7 +137,7 @@ bool EKIWriter::initialize(const ::EKIConfig& eki_config, int num_timesteps) {
     header->cols = num_timesteps;
 
     initialized = true;
-    std::cout << Color::BLUE << "[IPC] " << Color::RESET
+    std::cout << Color::CYAN << "[IPC] " << Color::RESET
               << "Writer initialized with full configuration\n";
     std::cout << "  Ensembles      : " << Color::BOLD << eki_config.ensemble_size << Color::RESET << "\n";
     std::cout << "  Receptors      : " << Color::BOLD << eki_config.num_receptors << Color::RESET << "\n";
@@ -188,7 +188,7 @@ bool EKIWriter::writeObservations(const float* observations, int rows, int cols)
     // Set ready status
     header->status = 1;
 
-    std::cout << Color::BLUE << "[IPC] " << Color::RESET
+    std::cout << Color::CYAN << "[IPC] " << Color::RESET
               << "Observations written: " << Color::BOLD << rows << "×" << cols << Color::RESET
               << " matrix (" << (rows * cols * sizeof(float)) / 1024.0 << " KB)\n";
     return true;
@@ -236,7 +236,7 @@ bool EKIWriter::initializeEnsembleObservations(int ensemble_size, int num_recept
     munmap(ens_obs_config_map, sizeof(EKIConfigBasic));
     close(ens_obs_config_fd);
 
-    std::cout << Color::BLUE << "[IPC] " << Color::RESET
+    std::cout << Color::CYAN << "[IPC] " << Color::RESET
               << "Ensemble observation config: "
               << Color::BOLD << ensemble_size << Color::RESET << " ensembles, "
               << Color::BOLD << num_receptors << Color::RESET << " receptors, "
@@ -293,7 +293,7 @@ bool EKIWriter::writeEnsembleObservations(const float* observations, int ensembl
         sum_val += val;
     }
 
-    std::cout << Color::BLUE << "[IPC] " << Color::RESET
+    std::cout << Color::CYAN << "[IPC] " << Color::RESET
               << "Ensemble observations written (" << Color::BOLD << ens_obs_data_size / 1024.0 << " KB" << Color::RESET << ")\n";
     std::cout << "  Shape : [" << ensemble_size << " × " << num_receptors << " × " << num_timesteps << "]\n";
     std::cout << "  Range : [" << min_val << ", " << max_val << "], mean=" << (sum_val / total_elements) << "\n";
@@ -358,7 +358,7 @@ void EKIWriter::unlinkSharedMemory() {
     // Don't unlink ensemble observation files - Python needs them!
     // shm_unlink(SHM_ENSEMBLE_OBS_CONFIG_NAME);
     // shm_unlink(SHM_ENSEMBLE_OBS_DATA_NAME);
-    std::cout << Color::BLUE << "[IPC] " << Color::RESET
+    std::cout << Color::CYAN << "[IPC] " << Color::RESET
               << "Shared memory unlinked (ensemble obs kept for Python)\n";
 }
 

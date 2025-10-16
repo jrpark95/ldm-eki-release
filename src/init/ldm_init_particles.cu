@@ -90,7 +90,7 @@ void LDM::initializeParticlesEKI(){
         return;
     }
     
-    std::cout << Color::MAGENTA << "[ENSEMBLE] " << Color::RESET
+    std::cout << Color::YELLOW << "[ENSEMBLE] " << Color::RESET
               << "Initializing " << nop << " particles ("
               << g_eki.true_emissions.size() << " time steps)" << std::endl;
     
@@ -185,7 +185,7 @@ void LDM::initializeParticlesEKI_AllEnsembles(float* ensemble_states, int num_en
     int particles_per_timestep = particles_per_ensemble / num_timesteps;
     int total_particles = particles_per_ensemble * num_ensembles;
 
-    std::cout << Color::MAGENTA << "[ENSEMBLE] " << Color::RESET
+    std::cout << Color::YELLOW << "[ENSEMBLE] " << Color::RESET
               << "Initializing " << Color::BOLD << num_ensembles << Color::RESET
               << " ensembles × " << Color::BOLD << num_timesteps << Color::RESET
               << " timesteps (" << Color::BOLD << total_particles << Color::RESET << " particles)" << std::endl;

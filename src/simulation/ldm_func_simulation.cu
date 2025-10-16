@@ -425,14 +425,14 @@ void LDM::runSimulation_eki(){
             }
 
             fprintf(stderr, "\r-------------------------------------------------\033[K\n");
-            fprintf(stderr, "\r[PROGRESS] Time: %8.1f sec │ Step: %4d/%4d [",
+            fprintf(stderr, "\rTime: %8.1f sec │ Step: %4d/%4d [",
                    currentTime, timestep, total_steps);
             for (int i = 0; i < bar_width; i++) {
                 if (i < bar_filled) fprintf(stderr, "█");
                 else fprintf(stderr, "░");
             }
             fprintf(stderr, "] %.1f%%\033[K\n", progress);
-            fprintf(stderr, "\r[PROGRESS] Meteo: Past=%d Future=%d │ t0=%.3f\033[K\n",
+            fprintf(stderr, "\rMeteo: Past=%d Future=%d │ t0=%.3f\033[K\n",
                    past_meteo_index,
                    (future_meteo_index < g_eki_meteo.num_time_steps) ? future_meteo_index : past_meteo_index,
                    t0);
@@ -744,14 +744,14 @@ void LDM::runSimulation_eki_dump(){
             }
 
             fprintf(stderr, "\r-------------------------------------------------\033[K\n");
-            fprintf(stderr, "\r[PROGRESS] Time: %8.1f sec │ Step: %4d/%4d [",
+            fprintf(stderr, "\rTime: %8.1f sec │ Step: %4d/%4d [",
                    currentTime, timestep, total_steps);
             for (int i = 0; i < bar_width; i++) {
                 if (i < bar_filled) fprintf(stderr, "█");
                 else fprintf(stderr, "░");
             }
             fprintf(stderr, "] %.1f%%\033[K\n", progress);
-            fprintf(stderr, "\r[PROGRESS] Meteo: Past=%d Future=%d │ t0=%.3f\033[K\n",
+            fprintf(stderr, "\rMeteo: Past=%d Future=%d │ t0=%.3f\033[K\n",
                    past_meteo_index,
                    (future_meteo_index < g_eki_meteo.num_time_steps) ? future_meteo_index : past_meteo_index,
                    t0);

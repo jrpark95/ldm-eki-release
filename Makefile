@@ -81,7 +81,8 @@ PHYSICS_SOURCES = \
 
 # Debug module sources (Agent 4)
 DEBUG_SOURCES = \
-    src/debug/memory_doctor.cu
+    src/debug/memory_doctor.cu \
+    src/debug/kernel_error_collector.cu
 
 # All CUDA sources combined
 ALL_CU_SOURCES = \

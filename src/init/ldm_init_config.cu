@@ -142,7 +142,7 @@ void LDM::cleanOutputDirectory() {
 }
 
 void LDM::loadEKISettings() {
-    std::cout << Color::CYAN << "[SYSTEM] " << Color::RESET
+    std::cout << "\n" << Color::CYAN << "[SYSTEM] " << Color::RESET
               << "Loading EKI settings... " << std::flush;
     
     FILE* ekiFile = fopen("input/eki_settings.txt", "r");

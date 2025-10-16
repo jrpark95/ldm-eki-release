@@ -46,6 +46,7 @@ LDM::LDM()
     , d_ensemble_dose(nullptr)
     , d_ensemble_particle_count(nullptr)
     , d_T_matrix(nullptr)
+    , d_flex_hgt(nullptr)
     , device_meteorological_data_pres(nullptr)
     , device_meteorological_data_unis(nullptr)
     , device_meteorological_data_etas(nullptr)
@@ -64,6 +65,12 @@ LDM::~LDM() {
     if (d_T_matrix != nullptr) {
         cudaFree(d_T_matrix);
         d_T_matrix = nullptr;
+    }
+
+    // Free height data GPU memory
+    if (d_flex_hgt != nullptr) {
+        cudaFree(d_flex_hgt);
+        d_flex_hgt = nullptr;
     }
 
     // Cleanup other resources

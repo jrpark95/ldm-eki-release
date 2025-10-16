@@ -60,7 +60,7 @@ __global__ void move_part_by_wind_mpi(
         float zeta = p.z/hmix;
         
         for(int i=0; i<dimZ_GFS; i++){
-            if(d_flex_hgt[i] > p.z){
+            if(ks.flex_hgt[i] > p.z){
                 zidx = i-1;  // Fixed: use lower level index like CRAM
                 break;
             }
@@ -71,12 +71,12 @@ __global__ void move_part_by_wind_mpi(
         float y0 = p.y-yidx;
         
         // CRITICAL FIX: 높이 차이가 0에 가까우면 안전한 값으로 설정
-        float height_diff = d_flex_hgt[zidx+1] - d_flex_hgt[zidx];
+        float height_diff = ks.flex_hgt[zidx+1] - ks.flex_hgt[zidx];
         float z0;
         if (abs(height_diff) < 1e-6f) {
             z0 = 0.0f; // 높이 차이가 거의 없으면 하위 레벨 사용
         } else {
-            z0 = (p.z - d_flex_hgt[zidx]) / height_diff;
+            z0 = (p.z - ks.flex_hgt[zidx]) / height_diff;
         }
         
         float x1 = 1-x0;
@@ -678,9 +678,9 @@ __global__ void move_part_by_wind_mpi(
         p.y += dy*s1; //!!
         
 
-        if(p.z > d_flex_hgt[dimZ_GFS-1]) {
+        if(p.z > ks.flex_hgt[dimZ_GFS-1]) {
             float old_z_clamp = p.z;
-            p.z = d_flex_hgt[dimZ_GFS-1]*0.999999;
+            p.z = ks.flex_hgt[dimZ_GFS-1]*0.999999;
         }
 
         float prob = 0.0;

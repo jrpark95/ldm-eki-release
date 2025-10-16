@@ -3,6 +3,7 @@
 #include "ipc/ldm_eki_reader.cuh"
 #include "ipc/ldm_eki_writer.cuh"
 #include "debug/memory_doctor.cuh"
+#include "debug/kernel_error_collector.cuh"
 #include "simulation/ldm_func_output.cuh"
 #include "colors.h"
 
@@ -259,9 +260,17 @@ int main(int argc, char** argv) {
 
     // Run EKI simulation with preloaded meteorological data
     std::cout << "\nRunning forward simulation..." << std::endl;
+
+    // Enable kernel error collection
+    KernelErrorCollector::enableCollection();
+
     ldm.runSimulation_eki();
 
     ldm.stopTimer();
+
+    // Report any kernel errors that occurred during simulation
+    KernelErrorCollector::reportAllErrors();
+    KernelErrorCollector::disableCollection();
 
     std::cout << Color::GREEN << "Simulation completed successfully"
               << Color::RESET << "\n" << std::endl;
@@ -648,9 +657,18 @@ int main(int argc, char** argv) {
     // Run ensemble simulation
     std::cout << "\n" << Color::YELLOW << "[ENSEMBLE] " << Color::RESET
               << "Starting forward simulation..." << std::endl;
+
+    // Enable kernel error collection
+    KernelErrorCollector::clearErrors();  // Clear errors from previous iteration
+    KernelErrorCollector::enableCollection();
+
     ldm.startTimer();
     ldm.runSimulation_eki();
     ldm.stopTimer();
+
+    // Report any kernel errors that occurred during ensemble simulation
+    KernelErrorCollector::reportAllErrors();
+    KernelErrorCollector::disableCollection();
 
     std::cout << Color::GREEN << "[ENSEMBLE] Simulation completed" << Color::RESET << "\n" << std::endl;
 

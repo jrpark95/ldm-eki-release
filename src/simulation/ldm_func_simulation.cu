@@ -5,6 +5,7 @@
 
 #include "../core/ldm.cuh"
 #include "ldm_func_simulation.cuh"
+#include "../debug/kernel_error_collector.cuh"
 #include "../colors.h"
 #include <unistd.h>  // for isatty()
 
@@ -68,6 +69,7 @@ void LDM::runSimulation(){
         update_particle_flags<<<blocks, threadsPerBlock>>>
             (d_part, activationRatio, nop);
         cudaDeviceSynchronize();
+        CHECK_KERNEL_ERROR();
 
         NuclideConfig* nucConfig = NuclideConfig::getInstance();
 
@@ -89,6 +91,7 @@ void LDM::runSimulation(){
         ks.settling_vel = vsetaver;
         ks.cunningham_fac = cunningham;
         ks.T_matrix = d_T_matrix;
+        ks.flex_hgt = d_flex_hgt;
 
         move_part_by_wind_mpi<<<blocks, threadsPerBlock>>>
         (d_part, t0, PROCESS_INDEX, d_dryDep, d_wetDep, mesh.lon_count, mesh.lat_count,
@@ -98,6 +101,7 @@ void LDM::runSimulation(){
             device_meteorological_flex_pres1,
             ks);
         cudaDeviceSynchronize();
+        CHECK_KERNEL_ERROR();
 
         timestep++;
 
@@ -318,11 +322,15 @@ void LDM::runSimulation_eki(){
             }
 #endif
             
-            // CRITICAL FIX: Copy height data to GPU constant memory
-            cudaError_t hgt_err = cudaMemcpyToSymbol(d_flex_hgt, flex_hgt.data(), sizeof(float) * dimZ_GFS);
+            // Copy height data to GPU memory
+            cudaError_t hgt_err = cudaMemcpy(d_flex_hgt, flex_hgt.data(), sizeof(float) * dimZ_GFS, cudaMemcpyHostToDevice);
             if (hgt_err != cudaSuccess) {
-                fprintf(stderr, "%s[ERROR]%s Failed to copy height data to GPU: %s\n",
-                        Color::RED, Color::RESET, cudaGetErrorString(hgt_err));
+                // Log to file only (collected by Kernel Error Collector for batch reporting)
+                extern std::ofstream* g_log_file;
+                if (g_log_file && g_log_file->is_open()) {
+                    *g_log_file << "[ERROR] Failed to copy height data to GPU: "
+                                << cudaGetErrorString(hgt_err) << "\n" << std::flush;
+                }
             }
         }
 
@@ -382,6 +390,7 @@ void LDM::runSimulation_eki(){
                 (d_part, activationRatio, nop);
         }
         cudaDeviceSynchronize();
+        CHECK_KERNEL_ERROR();
 
 #ifdef DEBUG
         // === NaN check after first kernel ===
@@ -410,6 +419,7 @@ void LDM::runSimulation_eki(){
         ks.settling_vel = vsetaver;
         ks.cunningham_fac = cunningham;
         ks.T_matrix = d_T_matrix;
+        ks.flex_hgt = d_flex_hgt;
 
         // Use ensemble kernel for ensemble mode, regular kernel for single mode
         if (is_ensemble_mode) {
@@ -434,6 +444,7 @@ void LDM::runSimulation_eki(){
                 ks);
         }
         cudaDeviceSynchronize();
+        CHECK_KERNEL_ERROR();
 
 #ifdef DEBUG
         // === Most important check: After move_part_by_wind_mpi ===
@@ -692,11 +703,15 @@ void LDM::runSimulation_eki_dump(){
             }
 #endif
             
-            // CRITICAL FIX: Copy height data to GPU constant memory
-            cudaError_t hgt_err = cudaMemcpyToSymbol(d_flex_hgt, flex_hgt.data(), sizeof(float) * dimZ_GFS);
+            // Copy height data to GPU memory
+            cudaError_t hgt_err = cudaMemcpy(d_flex_hgt, flex_hgt.data(), sizeof(float) * dimZ_GFS, cudaMemcpyHostToDevice);
             if (hgt_err != cudaSuccess) {
-                fprintf(stderr, "%s[ERROR]%s Failed to copy height data to GPU: %s\n",
-                        Color::RED, Color::RESET, cudaGetErrorString(hgt_err));
+                // Log to file only (collected by Kernel Error Collector for batch reporting)
+                extern std::ofstream* g_log_file;
+                if (g_log_file && g_log_file->is_open()) {
+                    *g_log_file << "[ERROR] Failed to copy height data to GPU: "
+                                << cudaGetErrorString(hgt_err) << "\n" << std::flush;
+                }
             }
         }
 
@@ -756,6 +771,7 @@ void LDM::runSimulation_eki_dump(){
                 (d_part, activationRatio, nop);
         }
         cudaDeviceSynchronize();
+        CHECK_KERNEL_ERROR();
 
 #ifdef DEBUG
         // === NaN check after first kernel ===
@@ -784,6 +800,7 @@ void LDM::runSimulation_eki_dump(){
         ks.settling_vel = vsetaver;
         ks.cunningham_fac = cunningham;
         ks.T_matrix = d_T_matrix;
+        ks.flex_hgt = d_flex_hgt;
 
         // Use ensemble kernel for ensemble mode, regular kernel for single mode
         if (is_ensemble_mode) {
@@ -808,6 +825,7 @@ void LDM::runSimulation_eki_dump(){
                 ks);
         }
         cudaDeviceSynchronize();
+        CHECK_KERNEL_ERROR();
 
 #ifdef DEBUG
         // === Most important check: After move_part_by_wind_mpi ===

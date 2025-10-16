@@ -216,8 +216,7 @@ using namespace Constants;
 // Device constant scalars removed - now passed via KernelScalars struct parameter
 // This avoids "invalid device symbol" errors in non-RDC compilation mode
 
-// Device arrays - defined in device_storage.cu with extern linkage
-extern __device__ float d_flex_hgt[50];
+// Device arrays - REMOVED: d_flex_hgt now allocated with cudaMalloc in LDM class
 
 __device__ double d_uWind[512];
 __device__ double d_vWind[512];
@@ -239,6 +238,9 @@ private:
 
     // CRAM decay matrix (GPU memory)
     float* d_T_matrix;  // Decay transition matrix [N_NUCLIDES × N_NUCLIDES]
+
+    // Height data (GPU memory)
+    float* d_flex_hgt;  // Vertical height levels [dimZ_GFS = 50 elements]
 
     // EKI observation system variables
     float* d_receptor_lats;         // GPU memory for receptor latitudes

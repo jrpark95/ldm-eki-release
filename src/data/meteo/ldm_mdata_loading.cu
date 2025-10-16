@@ -1374,10 +1374,22 @@ void LDM::loadFlexGFSData(){
     }
 
     file_hgt.close();
-    
-    cudaError_t err = cudaMemcpyToSymbol(d_flex_hgt, flex_hgt.data(), sizeof(float) * (dimZ_GFS));
-    if (err != cudaSuccess) std::cerr << "Failed to copy data to constant memory: " << cudaGetErrorString(err) << std::endl;
-        
+
+    // Allocate GPU memory for height data if not already allocated
+    if (d_flex_hgt == nullptr) {
+        cudaError_t alloc_err = cudaMalloc(&d_flex_hgt, sizeof(float) * dimZ_GFS);
+        if (alloc_err != cudaSuccess) {
+            std::cerr << "Failed to allocate GPU memory for flex_hgt: " << cudaGetErrorString(alloc_err) << std::endl;
+            return;
+        }
+    }
+
+    // Copy height data to GPU memory
+    cudaError_t err = cudaMemcpy(d_flex_hgt, flex_hgt.data(), sizeof(float) * dimZ_GFS, cudaMemcpyHostToDevice);
+    if (err != cudaSuccess) {
+        std::cerr << "Failed to copy flex_hgt to GPU memory: " << cudaGetErrorString(err) << std::endl;
+    }
+
 
 }
 
@@ -1427,16 +1439,27 @@ void LDM::loadFlexHeightData(){
 
     file.close();
     std::cout << "[DEBUG] Successfully read " << dimZ_GFS << " height levels from file" << std::endl;
-    
-    std::cout << "[DEBUG] Attempting to copy " << dimZ_GFS << " float values to d_flex_hgt constant memory" << std::endl;
-    cudaError_t err = cudaMemcpyToSymbol(d_flex_hgt, flex_hgt.data(), sizeof(float) * (dimZ_GFS));
-    if (err != cudaSuccess) {
-        std::cerr << "[ERROR] Failed to copy flex_hgt to GPU constant memory: " << cudaGetErrorString(err) << std::endl;
-        std::cerr << "[ERROR] Size attempted: " << sizeof(float) * (dimZ_GFS) << " bytes (" << dimZ_GFS << " floats)" << std::endl;
-    } else {
-        std::cout << "[DEBUG] Successfully copied flex_hgt to GPU constant memory" << std::endl;
+
+    // Allocate GPU memory for height data if not already allocated
+    if (d_flex_hgt == nullptr) {
+        std::cout << "[DEBUG] Allocating GPU memory for " << dimZ_GFS << " height levels" << std::endl;
+        cudaError_t alloc_err = cudaMalloc(&d_flex_hgt, sizeof(float) * dimZ_GFS);
+        if (alloc_err != cudaSuccess) {
+            std::cerr << "[ERROR] Failed to allocate GPU memory for flex_hgt: " << cudaGetErrorString(alloc_err) << std::endl;
+            return;
+        }
     }
-        
+
+    // Copy height data to GPU memory
+    std::cout << "[DEBUG] Copying " << dimZ_GFS << " float values to d_flex_hgt GPU memory" << std::endl;
+    cudaError_t err = cudaMemcpy(d_flex_hgt, flex_hgt.data(), sizeof(float) * dimZ_GFS, cudaMemcpyHostToDevice);
+    if (err != cudaSuccess) {
+        std::cerr << "[ERROR] Failed to copy flex_hgt to GPU memory: " << cudaGetErrorString(err) << std::endl;
+        std::cerr << "[ERROR] Size attempted: " << sizeof(float) * dimZ_GFS << " bytes (" << dimZ_GFS << " floats)" << std::endl;
+    } else {
+        std::cout << "[DEBUG] Successfully copied flex_hgt to GPU memory" << std::endl;
+    }
+
 
 }
 

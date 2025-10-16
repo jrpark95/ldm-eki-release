@@ -521,8 +521,39 @@ bool LDM::preloadAllEKIMeteorologicalData() {
                    g_eki_meteo.unis_data_size, cudaMemcpyDeviceToDevice);
         
         std::cout << "Initial meteorological data loaded (index 0)" << std::endl;
+
+        // Allocate and initialize d_flex_hgt for kernel usage
+        if (d_flex_hgt == nullptr) {
+            std::cout << "Allocating d_flex_hgt for kernel usage..." << std::endl;
+            cudaError_t hgt_alloc_err = cudaMalloc(&d_flex_hgt, g_eki_meteo.hgt_data_size);
+            if (hgt_alloc_err != cudaSuccess) {
+                std::cerr << Color::RED << "[ERROR] " << Color::RESET
+                          << "Failed to allocate d_flex_hgt: "
+                          << cudaGetErrorString(hgt_alloc_err) << std::endl;
+                g_eki_meteo.cleanup();
+                return false;
+            }
+
+            // Initialize with first height data
+            float* first_hgt_ptr;
+            cudaMemcpy(&first_hgt_ptr, &g_eki_meteo.device_flex_hgt_data[0],
+                       sizeof(float*), cudaMemcpyDeviceToHost);
+            cudaError_t hgt_copy_err = cudaMemcpy(d_flex_hgt, first_hgt_ptr,
+                                                  g_eki_meteo.hgt_data_size, cudaMemcpyDeviceToDevice);
+            if (hgt_copy_err != cudaSuccess) {
+                std::cerr << Color::RED << "[ERROR] " << Color::RESET
+                          << "Failed to initialize d_flex_hgt: "
+                          << cudaGetErrorString(hgt_copy_err) << std::endl;
+                cudaFree(d_flex_hgt);
+                d_flex_hgt = nullptr;
+                g_eki_meteo.cleanup();
+                return false;
+            }
+            std::cout << "d_flex_hgt allocated and initialized ("
+                      << (g_eki_meteo.hgt_data_size / 1024.0) << " KB)" << std::endl;
+        }
     }
-    
+
     g_eki_meteo.is_initialized = true;
 
     std::cout << "GPU transfer completed (" << gpu_duration.count() << "ms)\n";

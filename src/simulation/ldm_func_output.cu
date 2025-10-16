@@ -6,6 +6,7 @@
 #include "../core/ldm.cuh"
 #include "ldm_func_output.cuh"
 #include "../colors.h"
+#include "../debug/kernel_error_collector.cuh"
 #include "../core/params.hpp"
 
 // Test function to verify g_log_file works across compilation units
@@ -209,6 +210,7 @@ void LDM::computeReceptorObservations(int timestep, float currentTime) {
     );
 
     cudaDeviceSynchronize();
+    CHECK_KERNEL_ERROR();
 
     // Log-only debug: kernel execution completed (single mode)
     if (g_log_file && g_log_file->is_open() && timestep % timesteps_per_observation == 0) {
@@ -438,6 +440,7 @@ void LDM::computeReceptorObservations_AllEnsembles(int timestep, float currentTi
     );
 
     cudaDeviceSynchronize();
+    CHECK_KERNEL_ERROR();
 
     // Log-only debug: kernel execution completed (ensemble mode)
     if (g_log_file && g_log_file->is_open() && timestep % timesteps_per_observation == 0) {
@@ -658,6 +661,7 @@ void LDM::computeGridReceptorObservations(int timestep, float currentTime) {
     );
 
     cudaDeviceSynchronize();
+    CHECK_KERNEL_ERROR();
 
     // Copy results back to host
     std::vector<float> host_dose(grid_receptor_total);

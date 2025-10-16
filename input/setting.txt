@@ -34,7 +34,7 @@ mass_output_file: mass_ldm.txt
 main_output_file: output.txt
 
 # TERMINAL OUTPUT SETTINGS #
-fixed_scroll_output: 0
+fixed_scroll_output: 1
 
 # PHYSICAL CONSTANTS #
 pi: 3.141592

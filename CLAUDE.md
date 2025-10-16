@@ -300,7 +300,8 @@ src/
 │   ├── ldm_init_particles.cuh/cu
 │   └── ldm_init_config.cuh/cu
 ├── debug/                   - 디버깅 도구
-│   └── memory_doctor.cuh/cu
+│   ├── memory_doctor.cuh/cu
+│   └── kernel_error_collector.cuh/cu
 └── eki/                     - Python EKI 프레임워크
     ├── RunEstimator.py      - 메인 EKI 실행기
     ├── Optimizer_EKI_np.py  - 칼만 역산 알고리즘
@@ -354,6 +355,16 @@ nvidia-smi
 
 **Memory Doctor 진단:**
 `MEMORY_DOCTOR_MODE=On` 활성화 후 `/tmp/eki_debug/`에서 상세한 데이터 전송 로그 확인.
+
+**Kernel Error Collector:**
+CUDA 커널 에러를 자동으로 수집하여 시뮬레이션 종료 시 일괄 보고합니다:
+- 에러 자동 수집: 시뮬레이션 중 발생한 모든 커널 에러를 메모리에 저장
+- 중복 제거: 동일한 위치의 동일한 에러는 카운트만 증가
+- 일괄 보고: 시뮬레이션 종료 시 에러 요약을 빨간색/굵게 출력
+- 로그 저장: `logs/error/kernel_errors_YYYY-MM-DD_HH-MM-SS.log`에 타임스탬프 로그 생성
+- 상세 문서: `docs/KERNEL_ERROR_COLLECTOR.md` 참조
+
+**참고:** 이 시스템은 **비동기 커널 에러**만 수집합니다 (`cudaGetLastError()`). 동기 CUDA API 에러(예: `cudaMemcpyToSymbol` 실패)는 기존 `fprintf` 핸들러로 즉시 출력됩니다.
 
 ## 최근 변경사항 (2025)
 
@@ -658,4 +669,185 @@ nvidia-smi
 - Non-RDC 컴파일 모드와 완전 호환
 - 모든 CRAM 붕괴 계산 정상 작동
 - 실행 파일 크기: 14MB (변경 없음)
+- 성능 영향: 없음 (일반 GPU 메모리 접근 속도 동일)
+
+### Kernel Error Collection System (2025-10-16)
+
+**목적**: CUDA 커널 에러를 시뮬레이션 중에 수집하고 종료 시 일괄 보고하여 터미널 출력을 깔끔하게 유지
+
+**구현**:
+- **에러 수집 시스템** (`src/debug/kernel_error_collector.cuh/cu`):
+  - `ErrorInfo` 구조체: 에러 메시지, 파일, 라인, 발생 횟수 저장
+  - 중복 제거: 동일 위치의 동일 에러는 카운트만 증가
+  - 발생 빈도순 정렬: 가장 많이 발생한 에러부터 출력
+  - 빨간색/굵게 포맷팅으로 가시성 확보
+
+- **CHECK_KERNEL_ERROR() 매크로**:
+  ```cpp
+  #define CHECK_KERNEL_ERROR() \
+      do { \
+          cudaError_t err = cudaGetLastError(); \
+          if (err != cudaSuccess) { \
+              KernelErrorCollector::collectError(err, __FILE__, __LINE__); \
+          } \
+      } while(0)
+  ```
+
+- **자동 통합**:
+  - `src/main_eki.cu`: 시뮬레이션 전후 enable/disable 및 보고
+  - `src/simulation/ldm_func_simulation.cu`: 모든 `cudaDeviceSynchronize()` 후 체크
+  - `src/simulation/ldm_func_output.cu`: 관측 커널 후 체크
+  - 총 20+ 곳에 CHECK_KERNEL_ERROR() 추가
+
+- **로그 파일 생성**:
+  - 타임스탬프: `logs/error/kernel_errors_YYYY-MM-DD_HH-MM-SS.log`
+  - 에러 발견 시에만 생성 (정상 실행 시 로그 없음)
+  - 터미널 출력과 동일한 포맷
+
+**동작 방식**:
+1. 시뮬레이션 시작 시 수집 활성화: `enableCollection()`
+2. 커널 실행 후 에러 체크: `CHECK_KERNEL_ERROR()`
+3. 에러 발생 시 메모리에 수집 (터미널 출력 없음)
+4. 시뮬레이션 종료 시 일괄 보고: `reportAllErrors()`
+5. 에러 발견 시 로그 파일 자동 생성: `saveToFile()`
+
+**수집 대상**:
+- ✅ 비동기 커널 런치 에러 (`cudaGetLastError()`)
+- ✅ 커널 실행 중 에러 (invalid argument, out of bounds, illegal memory access 등)
+- ❌ 동기 CUDA API 에러는 기존 fprintf 핸들러로 즉시 출력
+
+**검증**:
+- ✅ 빌드 성공 (경고 없음)
+- ✅ 에러 없는 시뮬레이션: 보고 없음, 로그 없음 (정상)
+- ✅ 성능 영향 없음: 체크 오버헤드 무시 가능
+- ✅ 상세 문서 작성: `docs/KERNEL_ERROR_COLLECTOR.md`
+
+**영향받은 파일**:
+- `src/debug/kernel_error_collector.cuh` - 인터페이스 정의
+- `src/debug/kernel_error_collector.cu` - 구현
+- `Makefile` - DEBUG_SOURCES에 추가
+- `src/main_eki.cu` - 수집 enable/disable/report
+- `src/simulation/ldm_func_simulation.cu` - 17개 체크 포인트 추가
+- `src/simulation/ldm_func_output.cu` - 3개 체크 포인트 추가
+
+**결과**:
+- 깔끔한 터미널 출력 (에러 없을 때 조용함)
+- 에러 발견 시 명확한 일괄 보고
+- 디버깅 효율성 향상 (에러 패턴 한눈에 파악)
+- 릴리즈 준비 완료 (프로덕션 레벨 에러 핸들링)
+
+### Flex Height (d_flex_hgt) 리팩토링 (2025-10-16)
+
+**문제**: 수직 고도 레벨 배열 `d_flex_hgt`가 `__device__` 메모리로 선언되어 non-RDC 컴파일 모드와 호환되지 않음. 추가로, EKI 모드에서 메모리 초기화가 누락되어 "illegal memory access" 에러 발생.
+
+**에러 증상**:
+1. **"invalid device symbol" 에러** (216회 발생):
+   - 위치: `ldm_func_simulation.cu:392`
+   - 원인: `cudaMemcpyToSymbol(d_flex_hgt, ...)` 호출 시 non-RDC 모드에서 심볼을 찾을 수 없음
+
+2. **"illegal memory access" 에러** (648회 발생):
+   - 위치: `ldm_func_simulation.cu:447` (216회), `ldm_func_output.cu:213` (216회), `ldm_func_simulation.cu:393` (215+1회)
+   - 원인: EKI 모드에서 `d_flex_hgt`가 nullptr로 남아있어 커널에서 접근 시 크래시
+
+**해결 방안**:
+
+**1단계: `__device__` 메모리에서 일반 GPU 메모리로 변경** (T_matrix 패턴 적용)
+
+- **선언 제거** (`src/core/device_storage.cu/cuh`):
+  - `__device__ float d_flex_hgt[50];` 및 extern 선언 삭제
+  - 주석으로 제거 사유 기록
+
+- **LDM 클래스에 포인터 추가** (`src/core/ldm.cuh`, `ldm.cu`):
+  ```cpp
+  class LDM {
+  private:
+      float* d_T_matrix;
+      float* d_flex_hgt;  // Vertical height levels [dimZ_GFS = 50 elements]
+  public:
+      LDM() : d_T_matrix(nullptr), d_flex_hgt(nullptr) { }
+      ~LDM() {
+          if (d_T_matrix) cudaFree(d_T_matrix);
+          if (d_flex_hgt) cudaFree(d_flex_hgt);
+      }
+  };
+  ```
+
+- **KernelScalars에 필드 추가** (`src/core/params.hpp`):
+  ```cpp
+  struct alignas(16) KernelScalars {
+      // ... existing fields ...
+      const float* T_matrix;
+      const float* flex_hgt;  // Vertical height levels (dimZ_GFS elements)
+  };
+  ```
+
+- **메모리 할당 방식 변경**:
+  - **비-EKI 모드** (`src/data/meteo/ldm_mdata_loading.cu`):
+    - `cudaMemcpyToSymbol()` → `cudaMalloc()` + `cudaMemcpy()` (line 1378, 1432)
+  - **EKI 모드** (`src/data/meteo/ldm_mdata_cache.cu`):
+    - `preloadAllEKIMeteorologicalData()` 함수에서 할당 및 초기화 (line 525-554)
+
+- **커널 호출 위치 업데이트** (`src/simulation/ldm_func_simulation.cu`):
+  - 3개 함수에서 `ks.flex_hgt = d_flex_hgt;` 추가:
+    - `runSimulation()` (line 94)
+    - `runSimulation_eki()` (line 422)
+    - `runSimulation_eki_dump()` (line 803)
+  - 런타임 업데이트: `cudaMemcpyToSymbol()` → `cudaMemcpy()` (line 326, 707)
+
+- **커널 구현 업데이트** (4개 파일):
+  - `src/kernels/particle/ldm_kernels_particle.cu`
+  - `src/kernels/particle/ldm_kernels_particle_ens.cu`
+  - `src/kernels/dump/ldm_kernels_dump.cu`
+  - `src/kernels/dump/ldm_kernels_dump_ens.cu`
+  - 모두 `d_flex_hgt[...]` → `ks.flex_hgt[...]`로 변경 (sed 일괄 변환)
+
+**2단계: EKI 모드에서 d_flex_hgt 초기화 추가**
+
+EKI 모드에서는 기상 데이터 사전 로딩 시 `d_flex_hgt`를 명시적으로 할당하고 초기화해야 합니다:
+
+```cpp
+// src/data/meteo/ldm_mdata_cache.cu (line 525-554)
+// Allocate and initialize d_flex_hgt for kernel usage
+if (d_flex_hgt == nullptr) {
+    std::cout << "Allocating d_flex_hgt for kernel usage..." << std::endl;
+    cudaError_t hgt_alloc_err = cudaMalloc(&d_flex_hgt, g_eki_meteo.hgt_data_size);
+    if (hgt_alloc_err != cudaSuccess) {
+        std::cerr << "[ERROR] Failed to allocate d_flex_hgt..." << std::endl;
+        return false;
+    }
+
+    // Initialize with first height data
+    float* first_hgt_ptr;
+    cudaMemcpy(&first_hgt_ptr, &g_eki_meteo.device_flex_hgt_data[0],
+               sizeof(float*), cudaMemcpyDeviceToHost);
+    cudaMemcpy(d_flex_hgt, first_hgt_ptr,
+               g_eki_meteo.hgt_data_size, cudaMemcpyDeviceToDevice);
+
+    std::cout << "d_flex_hgt allocated and initialized" << std::endl;
+}
+```
+
+**검증**:
+- ✅ 빌드 성공 (경고/에러 없음)
+- ✅ "invalid device symbol" 에러 완전 제거
+- ✅ "illegal memory access" 에러 완전 제거
+- ✅ 실행 파일 크기: 14MB (변경 없음)
+
+**영향받은 파일**:
+- `src/core/params.hpp` - KernelScalars에 flex_hgt 필드 추가
+- `src/core/ldm.cuh` - d_flex_hgt 멤버 추가, device_storage extern 제거
+- `src/core/ldm.cu` - 생성자/소멸자에서 메모리 관리
+- `src/core/device_storage.cu/cuh` - `__device__` 선언 제거
+- `src/data/meteo/ldm_mdata_loading.cu` - 비-EKI 모드 메모리 할당
+- `src/data/meteo/ldm_mdata_cache.cu` - EKI 모드 메모리 할당 및 초기화
+- `src/simulation/ldm_func_simulation.cu` - 3개 함수에서 ks.flex_hgt 설정 및 런타임 업데이트
+- `src/kernels/particle/ldm_kernels_particle.cu` - d_flex_hgt → ks.flex_hgt
+- `src/kernels/particle/ldm_kernels_particle_ens.cu` - d_flex_hgt → ks.flex_hgt
+- `src/kernels/dump/ldm_kernels_dump.cu` - d_flex_hgt → ks.flex_hgt
+- `src/kernels/dump/ldm_kernels_dump_ens.cu` - d_flex_hgt → ks.flex_hgt
+
+**결과**:
+- Non-RDC 컴파일 모드와 완전 호환 (T_matrix와 일관된 패턴)
+- EKI 모드에서 안정적인 메모리 관리
+- 모든 커널에서 고도 레벨 정상 접근
 - 성능 영향: 없음 (일반 GPU 메모리 접근 속도 동일)

@@ -166,3 +166,78 @@ void loadEKISettings();
  *   Example: 121 receptors = 2.4 KB
  */
 void initializeGridReceptors(int grid_count_param, float grid_spacing_param);
+
+// ================== MODERNIZED CONFIG PARSERS (Phase 1) ==================
+
+/**
+ * @method LDM::loadSimulationConfig
+ * @brief Load simulation parameters from modernized simulation.conf file
+ *
+ * @details Parses input/simulation.conf to load core simulation settings:
+ *          - Temporal: time_end, time_step, vtk_output_frequency
+ *          - Particles: total_particles
+ *          - Atmosphere: rural_conditions, use_pasquill_gifford
+ *          - Meteorology: use_gfs_data
+ *          - Terminal: fixed_scroll_output
+ *
+ * @pre input/simulation.conf must exist
+ * @post g_sim struct populated with simulation parameters
+ *
+ * @throws std::exit(1) if simulation.conf cannot be opened
+ *
+ * @see docs/INPUT_MODERNIZATION_PLAN.md
+ */
+void loadSimulationConfig();
+
+/**
+ * @method LDM::loadPhysicsConfig
+ * @brief Load physics model configuration from physics.conf
+ *
+ * @details Parses input/physics.conf to configure physics models and constants.
+ *
+ * @pre input/physics.conf must exist
+ * @post Physics switches stored in g_turb_switch, g_drydep, g_wetdep, g_raddecay
+ *
+ * @throws std::exit(1) if physics.conf cannot be opened
+ */
+void loadPhysicsConfig();
+
+/**
+ * @method LDM::loadSourceConfig
+ * @brief Load source locations from source.conf file
+ *
+ * @details Loads emission source locations from input/source.conf.
+ *          Format: LONGITUDE LATITUDE HEIGHT (space-separated)
+ *
+ * @pre input/source.conf must exist
+ * @post this->sources vector populated with Source structs
+ *
+ * @throws std::exit(1) if source.conf cannot be opened
+ */
+void loadSourceConfig();
+
+/**
+ * @method LDM::loadNuclidesConfig
+ * @brief Load nuclide configuration from nuclides.conf
+ *
+ * @details Parses nuclide properties with backward compatibility for legacy formats.
+ *
+ * @pre Nuclide configuration file must exist
+ * @post decayConstants and drydepositionVelocity vectors populated
+ *
+ * @throws std::exit(1) if no configuration file can be opened
+ */
+void loadNuclidesConfig();
+
+/**
+ * @method LDM::loadAdvancedConfig
+ * @brief Load advanced system configuration from advanced.conf
+ *
+ * @details Validates grid dimensions and coordinate system parameters.
+ *
+ * @pre input/advanced.conf must exist
+ * @post Grid dimensions validated against Constants namespace
+ *
+ * @throws std::exit(1) if advanced.conf cannot be opened
+ */
+void loadAdvancedConfig();

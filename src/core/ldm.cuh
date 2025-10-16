@@ -463,7 +463,7 @@ public:
     void destroyTextureObjects();
 
     // ldm_init.cuh
-    void loadSimulationConfiguration();  // Used in main
+    void loadSimulationConfiguration();  // Used in main (legacy)
     void cleanOutputDirectory();  // Used in loadSimulationConfiguration
     void calculateAverageSettlingVelocity();  // Used in main
     void initializeParticles();
@@ -471,6 +471,13 @@ public:
     void initializeParticlesEKI_AllEnsembles(float* ensemble_states, int num_ensembles, int num_timesteps);  // EKI ensemble mode initialization
     void calculateSettlingVelocity();
     void loadEKISettings();
+
+    // Modernized config parsers (Phase 1 - INPUT_MODERNIZATION_PLAN.md)
+    void loadSimulationConfig();   // simulation.conf parser
+    void loadPhysicsConfig();       // physics.conf parser
+    void loadSourceConfig();        // source.conf parser
+    void loadNuclidesConfig();      // nuclides.conf parser
+    void loadAdvancedConfig();      // advanced.conf parser
 
     // ldm_mdata.cuh
     void initializeFlexGFSData();  // Used in main

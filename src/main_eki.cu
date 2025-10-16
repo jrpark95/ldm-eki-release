@@ -187,10 +187,19 @@ int main(int argc, char** argv) {
 
     LDM ldm;
 
-    ldm.loadSimulationConfiguration();
+    // Modern configuration loading (Phase 2 integration)
+    std::cout << "\n" << Color::BOLD << "Loading Configuration" << Color::RESET << "\n";
+
+    ldm.loadSimulationConfig();      // simulation.conf
+    ldm.loadPhysicsConfig();          // physics.conf
+    ldm.loadSourceConfig();           // source.conf
+    ldm.loadNuclidesConfig();         // nuclides.conf
+    ldm.loadAdvancedConfig();         // advanced.conf
+
+    std::cout << std::endl;
 
     // Log-only: simulation configuration details
-    *g_log_file << "[CONFIG] Simulation configuration loaded\n";
+    *g_log_file << "[CONFIG] Modernized configuration loaded\n";
     *g_log_file << "  Physics switches: TURB=" << g_turb_switch
             << " DRYDEP=" << g_drydep
             << " WETDEP=" << g_wetdep
@@ -205,14 +214,19 @@ int main(int argc, char** argv) {
     extern MemoryDoctor g_memory_doctor;
     g_memory_doctor.setEnabled(ldm.getEKIConfig().memory_doctor_mode);
 
-    // Initialize CRAM system with A60.csv matrix
+    // Initialize CRAM system with A60.csv matrix (moved from loadSimulationConfiguration)
     std::cout << "Initializing CRAM decay system..." << std::flush;
     if (!ldm.initialize_cram_system("./cram/A60.csv")) {
         std::cerr << Color::RED << "\n[ERROR] " << Color::RESET
                   << "CRAM system initialization failed" << std::endl;
         return 1;
     }
-    std::cout << " done\n" << std::endl;
+    std::cout << " done\n";
+
+    // Clean output directory (moved from loadSimulationConfiguration)
+    ldm.cleanOutputDirectory();
+
+    std::cout << std::endl;
 
     ldm.calculateAverageSettlingVelocity();
     ldm.initializeParticlesEKI();

@@ -26,4 +26,7 @@ struct alignas(16) KernelScalars {
     // Physics parameters
     float settling_vel;   // vsetaver
     float cunningham_fac; // cunningham
+
+    // CRAM decay matrix pointer
+    const float* T_matrix;  // Decay transition matrix (N_NUCLIDES × N_NUCLIDES)
 };

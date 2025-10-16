@@ -120,31 +120,8 @@ void LDM::loadSimulationConfiguration(){
 
     //nop = floor(nop/(sources.size()*decayConstants.size()))*sources.size()*decayConstants.size();
 
-    cudaError_t err;
-
-    err = cudaMemcpyToSymbol(d_time_end, &time_end, sizeof(float));
-    if (err != cudaSuccess) printf("Error copying to symbol: %s\n", cudaGetErrorString(err));
-    err = cudaMemcpyToSymbol(d_dt, &dt, sizeof(float));
-    if (err != cudaSuccess) printf("Error copying to symbol: %s\n", cudaGetErrorString(err));
-    err = cudaMemcpyToSymbol(d_freq_output, &freq_output, sizeof(int));
-    if (err != cudaSuccess) printf("Error copying to symbol: %s\n", cudaGetErrorString(err));
-    
-    
-    err = cudaMemcpyToSymbol(d_turb_switch, &g_turb_switch, sizeof(int));
-    if (err != cudaSuccess) printf("Error copying turb_switch to symbol: %s\n", cudaGetErrorString(err));
-    err = cudaMemcpyToSymbol(d_drydep, &g_drydep, sizeof(int));
-    if (err != cudaSuccess) printf("Error copying drydep to symbol: %s\n", cudaGetErrorString(err));
-    err = cudaMemcpyToSymbol(d_wetdep, &g_wetdep, sizeof(int));
-    if (err != cudaSuccess) printf("Error copying wetdep to symbol: %s\n", cudaGetErrorString(err));
-    err = cudaMemcpyToSymbol(d_raddecay, &g_raddecay, sizeof(int));
-    if (err != cudaSuccess) printf("Error copying raddecay to symbol: %s\n", cudaGetErrorString(err));
-    err = cudaMemcpyToSymbol(d_nop, &nop, sizeof(int));
-    if (err != cudaSuccess) printf("Error copying to symbol: %s\n", cudaGetErrorString(err));
-
-    err = cudaMemcpyToSymbol(d_isRural, &isRural, sizeof(bool));
-    if (err != cudaSuccess) printf("Error copying to symbol: %s\n", cudaGetErrorString(err));
-    err = cudaMemcpyToSymbol(d_isPG, &isPG, sizeof(bool));
-    if (err != cudaSuccess) printf("Error copying to symbol: %s\n", cudaGetErrorString(err));
+    // Note: All configuration values are now passed via KernelScalars struct to kernels
+    // No need for cudaMemcpyToSymbol since __constant__ symbols have been removed
 
 }
 void LDM::cleanOutputDirectory() {

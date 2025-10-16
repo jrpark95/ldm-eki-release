@@ -223,25 +223,41 @@ bool LDM::build_T_matrix_and_upload(const char* A60_csv_path) {
 
 #ifdef DEBUG
     std::cout << Color::YELLOW << "[DEBUG] " << Color::RESET
-              << "Copying T matrix to T_const symbol ("
+              << "Allocating GPU memory for T matrix ("
               << Th.size() << " floats, " << Th.size()*sizeof(float) / 1024.0 << " KB)\n";
 #endif
 
-    // Upload to GPU constant memory
-    cudaError_t e = cudaMemcpyToSymbol(T_const, Th.data(),
-                                       Th.size()*sizeof(float), 0, cudaMemcpyHostToDevice);
+    // Free existing GPU memory if already allocated
+    if (d_T_matrix != nullptr) {
+        cudaFree(d_T_matrix);
+        d_T_matrix = nullptr;
+    }
+
+    // Allocate GPU memory for T matrix
+    size_t matrix_size = Th.size() * sizeof(float);
+    cudaError_t e = cudaMalloc(&d_T_matrix, matrix_size);
     if (e != cudaSuccess) {
         std::cerr << Color::RED << Color::BOLD << "[ERROR] " << Color::RESET
-                  << "Failed to copy T matrix to T_const: " << cudaGetErrorString(e) << "\n";
+                  << "Failed to allocate GPU memory for T matrix: " << cudaGetErrorString(e) << "\n";
+        return false;
+    }
+
+    // Copy T matrix data to GPU
+    e = cudaMemcpy(d_T_matrix, Th.data(), matrix_size, cudaMemcpyHostToDevice);
+    if (e != cudaSuccess) {
+        std::cerr << Color::RED << Color::BOLD << "[ERROR] " << Color::RESET
+                  << "Failed to copy T matrix to GPU: " << cudaGetErrorString(e) << "\n";
+        cudaFree(d_T_matrix);
+        d_T_matrix = nullptr;
         return false;
     }
 
 #ifdef DEBUG
     std::cout << Color::GREEN << "✓ " << Color::RESET
-              << "T matrix copied to GPU constant memory\n";
+              << "T matrix copied to GPU memory\n";
 #endif
 
-    return e == cudaSuccess;
+    return true;
 }
 
 // ============================================================================

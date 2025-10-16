@@ -45,6 +45,7 @@ LDM::LDM()
     , d_receptor_particle_count(nullptr)
     , d_ensemble_dose(nullptr)
     , d_ensemble_particle_count(nullptr)
+    , d_T_matrix(nullptr)
     , device_meteorological_data_pres(nullptr)
     , device_meteorological_data_unis(nullptr)
     , device_meteorological_data_etas(nullptr)
@@ -59,8 +60,13 @@ LDM::LDM()
 }
 
 LDM::~LDM() {
-    // Destructor implementation
-    // Cleanup resources
+    // Free CRAM T matrix GPU memory
+    if (d_T_matrix != nullptr) {
+        cudaFree(d_T_matrix);
+        d_T_matrix = nullptr;
+    }
+
+    // Cleanup other resources
 }
 
 // ============================================================================

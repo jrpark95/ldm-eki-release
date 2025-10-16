@@ -46,16 +46,11 @@ extern int g_wetdep;
 extern int g_raddecay;
 
 // Physics model device constant memory (for kernels)
-__constant__ int d_turb_switch;
-__constant__ int d_drydep;
-__constant__ int d_wetdep;
-__constant__ int d_raddecay;
+// NOTE: Scalar constants removed - now passed via KernelScalars struct to avoid
+//       invalid device symbol errors in non-RDC mode
+// Arrays (d_flex_hgt, T_const) are defined in device_storage.cu
 
-// Backward compatibility macros (for kernels)
-#define TURB_SWITCH d_turb_switch
-#define DRYDEP d_drydep  
-#define WETDEP d_wetdep
-#define RADDECAY d_raddecay
+// Backward compatibility macros removed - use KernelScalars struct instead
 
 // CRAM Debug and Decay-Only Mode
 // #define DECAY_ONLY 1
@@ -217,27 +212,11 @@ using namespace Constants;
 #define cunningham (g_sim.cunninghamFactor)
 
 
-__constant__ float d_time_end;
-__constant__ float d_dt;
-__constant__ int d_freq_output;  // Used in initialization
-__constant__ int d_nop;  // Used in kernels
-__constant__ bool d_isRural;  // Used in initialization
-__constant__ bool d_isPG;    // Used in initialization
-__constant__ bool d_isGFS;   // Used in initialization
-__constant__ float d_vsetaver;
-__constant__ float d_cunningham;
+// Device constant scalars removed - now passed via KernelScalars struct parameter
+// This avoids "invalid device symbol" errors in non-RDC compilation mode
 
-__constant__ float d_start_lat;  // Used in grid output functions
-__constant__ float d_start_lon;  // Used in grid output functions
-__constant__ float d_lat_step;   // Used in grid output functions
-__constant__ float d_lon_step;   // Used in grid output functions
-
-
-// flex_hgt declared above with other globals
-
-
-__constant__ float d_flex_hgt[50];  // Used in flex functions
-__constant__ float T_const[N_NUCLIDES * N_NUCLIDES];
+// Device arrays - defined in device_storage.cu with extern linkage
+extern __device__ float d_flex_hgt[50];
 
 __device__ double d_uWind[512];
 __device__ double d_vWind[512];
@@ -256,6 +235,9 @@ private:
     FlexPres* device_meteorological_flex_pres1;
     FlexUnis* device_meteorological_flex_unis2;
     FlexPres* device_meteorological_flex_pres2;
+
+    // CRAM decay matrix (GPU memory)
+    float* d_T_matrix;  // Decay transition matrix [N_NUCLIDES × N_NUCLIDES]
 
     // EKI observation system variables
     float* d_receptor_lats;         // GPU memory for receptor latitudes

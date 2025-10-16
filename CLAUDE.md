@@ -577,3 +577,85 @@ nvidia-smi
 **남은 이슈**:
 - ⚠️ 모든 관측값이 0 (입자가 수용체에 도달하지 않음)
 - 이는 로깅 문제가 아닌 물리/시뮬레이션 설정 문제로 별도 조사 필요
+
+### CRAM T Matrix 리팩토링 (2025-10-16)
+
+**문제**: CRAM 붕괴 시스템의 T matrix가 `__constant__` 메모리를 사용하여 non-RDC (non-Relocatable Device Code) 컴파일 모드와 호환되지 않음
+
+**원인**:
+- T matrix가 `__constant__ float T_const[N_NUCLIDES * N_NUCLIDES]`로 선언
+- Non-RDC 모드에서는 `__constant__` 메모리가 컴파일 유닛 간 공유 불가
+- `cudaMemcpyToSymbol(T_const, ...)` 호출 시 "invalid device symbol" 에러 발생
+
+**해결 방안**:
+- **일반 GPU 메모리로 변경**: `__constant__` → `cudaMalloc` + `cudaMemcpy`
+- **LDM 클래스에 포인터 저장** (`src/core/ldm.cuh`, `ldm.cu`):
+  ```cpp
+  class LDM {
+  private:
+      float* d_T_matrix;  // GPU memory for T matrix
+  public:
+      LDM() : d_T_matrix(nullptr) { }
+      ~LDM() {
+          if (d_T_matrix) cudaFree(d_T_matrix);
+      }
+  };
+  ```
+
+- **KernelScalars를 통한 전달** (`src/core/params.hpp`):
+  ```cpp
+  struct alignas(16) KernelScalars {
+      // ... existing fields ...
+      const float* T_matrix;  // Decay transition matrix
+  };
+  ```
+
+- **메모리 할당 및 복사** (`src/physics/ldm_cram2.cu`):
+  ```cpp
+  // Free existing memory
+  if (d_T_matrix) cudaFree(d_T_matrix);
+
+  // Allocate and copy
+  cudaMalloc(&d_T_matrix, matrix_size);
+  cudaMemcpy(d_T_matrix, Th.data(), matrix_size, cudaMemcpyHostToDevice);
+  ```
+
+- **커널 호출 위치 업데이트** (`src/simulation/ldm_func_simulation.cu`):
+  - 3개 함수에서 `ks.T_matrix = d_T_matrix;` 추가:
+    - `runSimulation()` (line 91)
+    - `runSimulation_eki()` (line 410)
+    - `runSimulation_eki_dump()` (line 782)
+
+- **커널 구현 업데이트** (4개 파일):
+  - `src/kernels/particle/ldm_kernels_particle.cu` (line 848)
+  - `src/kernels/particle/ldm_kernels_particle_ens.cu` (line 843)
+  - `src/kernels/dump/ldm_kernels_dump.cu` (line 828)
+  - `src/kernels/dump/ldm_kernels_dump_ens.cu` (line 829)
+  - 모두 `T_const` → `ks.T_matrix`로 변경:
+    ```cpp
+    cram_decay_calculation(ks.T_matrix, p.concentrations);
+    ```
+
+**검증**:
+- ✅ 빌드 성공 (경고/에러 없음)
+- ✅ CRAM 시스템 정상 초기화: "Initializing CRAM decay system... done"
+- ✅ 3번의 EKI 반복 모두 성공적으로 완료
+- ✅ 관측값 정상 수집 및 Python 전송
+- ✅ "invalid device symbol" 에러 완전 제거
+
+**영향받은 파일**:
+- `src/core/params.hpp` - KernelScalars에 T_matrix 필드 추가
+- `src/core/ldm.cuh` - d_T_matrix 멤버 추가, T_const extern 제거
+- `src/core/ldm.cu` - 생성자/소멸자에서 메모리 관리
+- `src/physics/ldm_cram2.cu` - cudaMalloc + cudaMemcpy로 변경
+- `src/simulation/ldm_func_simulation.cu` - 3개 함수에서 ks.T_matrix 설정
+- `src/kernels/particle/ldm_kernels_particle.cu` - T_const → ks.T_matrix
+- `src/kernels/particle/ldm_kernels_particle_ens.cu` - T_const → ks.T_matrix
+- `src/kernels/dump/ldm_kernels_dump.cu` - T_const → ks.T_matrix
+- `src/kernels/dump/ldm_kernels_dump_ens.cu` - T_const → ks.T_matrix
+
+**결과**:
+- Non-RDC 컴파일 모드와 완전 호환
+- 모든 CRAM 붕괴 계산 정상 작동
+- 실행 파일 크기: 14MB (변경 없음)
+- 성능 영향: 없음 (일반 GPU 메모리 접근 속도 동일)

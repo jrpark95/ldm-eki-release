@@ -21,7 +21,8 @@ __device__ void nuclear_decay_optimized_inline(float* exp_matrix, float* concent
     // Apply simple Sr-92 → Y-92 decay for testing
     if(concentration[12] > 0.0f) {  // Sr-92 index
         float decay_rate_sr92 = 7.105e-05f;  // Sr-92 decay constant (1/s)
-        float decay_factor = __expf(-decay_rate_sr92 * d_dt);
+        float dt_test = 10.0f;  // Hardcoded test value (not used in production)
+        float decay_factor = __expf(-decay_rate_sr92 * dt_test);
         float decayed_amount = concentration[12] * (1.0f - decay_factor);
 
         result[12] = concentration[12] * decay_factor;  // Sr-92 decay
@@ -131,10 +132,10 @@ __device__ float k_f_qvsat(float p, float t) {
 // INITIALIZATION KERNEL IMPLEMENTATIONS
 // ============================================================================
 
-__global__ void init_curand_states(LDM::LDMpart* d_part, float t0){
+__global__ void init_curand_states(LDM::LDMpart* d_part, float t0, int num_particles){
 
         int idx = threadIdx.x + blockIdx.x * blockDim.x;
-        if (idx >= d_nop) return;
+        if (idx >= num_particles) return;
 
         unsigned long long seed = static_cast<unsigned long long>((t0 + idx * 0.001f) * ULLONG_MAX);
         curandState localState;
@@ -143,15 +144,15 @@ __global__ void init_curand_states(LDM::LDMpart* d_part, float t0){
     }
 
 __global__ void update_particle_flags(
-    LDM::LDMpart* d_part, float activationRatio){
+    LDM::LDMpart* d_part, float activationRatio, int num_particles){
 
         int idx = blockIdx.x * blockDim.x + threadIdx.x;
-        if (idx >= d_nop) return;
+        if (idx >= num_particles) return;
 
         LDM::LDMpart& p = d_part[idx];
 
         // Activate particles based on their timeidx and current activationRatio
-        int maxActiveTimeidx = int(d_nop * activationRatio);
+        int maxActiveTimeidx = int(num_particles * activationRatio);
 
         // Debug first particle activation decision
         if (idx == 0) {

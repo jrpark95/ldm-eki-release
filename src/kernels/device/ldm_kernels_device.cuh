@@ -141,16 +141,15 @@ __device__ __forceinline__ float GaussianRand(curandState* states, float mu, flo
  * @details Sets up cuRAND state for each particle using time-dependent seed.
  *          Seed combines simulation time and particle index for uniqueness.
  *
- * @param[in,out] d_part  Device array of particles
- * @param[in]     t0      Initial time for seed generation [seconds]
+ * @param[in,out] d_part         Device array of particles
+ * @param[in]     t0             Initial time for seed generation [seconds]
+ * @param[in]     num_particles  Total number of particles
  *
  * @grid_config
  *   - Block size: 256 threads
- *   - Grid size: (d_nop + 255) / 256
- *
- * @note Uses d_nop global constant for particle count
+ *   - Grid size: (num_particles + 255) / 256
  */
-__global__ void init_curand_states(LDM::LDMpart* d_part, float t0);
+__global__ void init_curand_states(LDM::LDMpart* d_part, float t0, int num_particles);
 
 /**
  * @kernel update_particle_flags
@@ -161,14 +160,13 @@ __global__ void init_curand_states(LDM::LDMpart* d_part, float t0);
  *
  * @param[in,out] d_part          Device array of particles
  * @param[in]     activationRatio Fraction of particles to activate [0,1]
+ * @param[in]     num_particles   Total number of particles
  *
  * @grid_config
  *   - Block size: 256 threads
- *   - Grid size: (d_nop + 255) / 256
- *
- * @note Uses d_nop global constant for particle count
+ *   - Grid size: (num_particles + 255) / 256
  */
-__global__ void update_particle_flags(LDM::LDMpart* d_part, float activationRatio);
+__global__ void update_particle_flags(LDM::LDMpart* d_part, float activationRatio, int num_particles);
 
 /**
  * @kernel update_particle_flags_ens

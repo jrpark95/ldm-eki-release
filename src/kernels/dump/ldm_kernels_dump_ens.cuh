@@ -11,6 +11,7 @@
 #include "../device/ldm_kernels_device.cuh"
 #include "../cram/ldm_kernels_cram.cuh"
 #include "../../physics/ldm_cram2.cuh"
+#include "../../core/params.hpp"
 
 /**
  * @kernel move_part_by_wind_mpi_ens_dump
@@ -60,4 +61,5 @@ __global__ void move_part_by_wind_mpi_ens_dump(
     FlexPres* device_meteorological_flex_pres0,
     FlexUnis* device_meteorological_flex_unis1,
     FlexPres* device_meteorological_flex_pres1,
-    int total_particles);
+    int total_particles,
+    const KernelScalars ks);

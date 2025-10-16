@@ -36,15 +36,7 @@ void LDM::runSimulation(){
     int lat_num = static_cast<int>(round((end_lat - start_lat) / lat_step) + 1);
     int lon_num = static_cast<int>(round((end_lon - start_lon) / lon_step) + 1);
 
-    err = cudaMemcpyToSymbol(d_start_lat, &start_lat, sizeof(float));
-    if (err != cudaSuccess) printf("Error copying start_lat to symbol: %s\n", cudaGetErrorString(err));
-    err = cudaMemcpyToSymbol(d_start_lon, &start_lon, sizeof(float));
-    if (err != cudaSuccess) printf("Error copying start_lon to symbol: %s\n", cudaGetErrorString(err));
-    err = cudaMemcpyToSymbol(d_lat_step, &lat_step, sizeof(float));
-    if (err != cudaSuccess) printf("Error copying lat_step to symbol: %s\n", cudaGetErrorString(err));
-    err = cudaMemcpyToSymbol(d_lon_step, &lon_step, sizeof(float));
-    if (err != cudaSuccess) printf("Error copying lon_step to symbol: %s\n", cudaGetErrorString(err));
-
+    // Grid parameters now passed via KernelScalars struct, not constant memory
     Mesh mesh(start_lat, start_lon, lat_step, lon_step, lat_num, lon_num);
 
     size_t meshSize = mesh.lat_count * mesh.lon_count * sizeof(float);
@@ -74,16 +66,37 @@ void LDM::runSimulation(){
         t0 = (currentTime - static_cast<int>(currentTime/time_interval)*time_interval) / time_interval;
 
         update_particle_flags<<<blocks, threadsPerBlock>>>
-            (d_part, activationRatio);
+            (d_part, activationRatio, nop);
         cudaDeviceSynchronize();
 
         NuclideConfig* nucConfig = NuclideConfig::getInstance();
+
+        // Populate KernelScalars for particle movement kernel
+        KernelScalars ks{};
+        ks.turb_switch = g_turb_switch;
+        ks.drydep = g_drydep;
+        ks.wetdep = g_wetdep;
+        ks.raddecay = g_raddecay;
+        ks.num_particles = nop;
+        ks.is_rural = isRural ? 1 : 0;
+        ks.is_pg = isPG ? 1 : 0;
+        ks.is_gfs = isGFS ? 1 : 0;
+        ks.delta_time = dt;
+        ks.grid_start_lat = grid_config.start_lat;
+        ks.grid_start_lon = grid_config.start_lon;
+        ks.grid_lat_step = grid_config.lat_step;
+        ks.grid_lon_step = grid_config.lon_step;
+        ks.settling_vel = vsetaver;
+        ks.cunningham_fac = cunningham;
+        ks.T_matrix = d_T_matrix;
+
         move_part_by_wind_mpi<<<blocks, threadsPerBlock>>>
         (d_part, t0, PROCESS_INDEX, d_dryDep, d_wetDep, mesh.lon_count, mesh.lat_count,
             device_meteorological_flex_unis0,
             device_meteorological_flex_pres0,
             device_meteorological_flex_unis1,
-            device_meteorological_flex_pres1);
+            device_meteorological_flex_pres1,
+            ks);
         cudaDeviceSynchronize();
 
         timestep++;
@@ -198,15 +211,7 @@ void LDM::runSimulation_eki(){
     int lat_num = static_cast<int>(round((end_lat - start_lat) / lat_step) + 1);
     int lon_num = static_cast<int>(round((end_lon - start_lon) / lon_step) + 1);
 
-    err = cudaMemcpyToSymbol(d_start_lat, &start_lat, sizeof(float));
-    if (err != cudaSuccess) printf("Error copying start_lat to symbol: %s\n", cudaGetErrorString(err));
-    err = cudaMemcpyToSymbol(d_start_lon, &start_lon, sizeof(float));
-    if (err != cudaSuccess) printf("Error copying start_lon to symbol: %s\n", cudaGetErrorString(err));
-    err = cudaMemcpyToSymbol(d_lat_step, &lat_step, sizeof(float));
-    if (err != cudaSuccess) printf("Error copying lat_step to symbol: %s\n", cudaGetErrorString(err));
-    err = cudaMemcpyToSymbol(d_lon_step, &lon_step, sizeof(float));
-    if (err != cudaSuccess) printf("Error copying lon_step to symbol: %s\n", cudaGetErrorString(err));
-
+    // Grid parameters now passed via KernelScalars struct, not constant memory
     Mesh mesh(start_lat, start_lon, lat_step, lon_step, lat_num, lon_num);
 
     size_t meshSize = mesh.lat_count * mesh.lon_count * sizeof(float);
@@ -372,7 +377,7 @@ void LDM::runSimulation_eki(){
         } else {
             // Single mode: use standard activation
             update_particle_flags<<<blocks, threadsPerBlock>>>
-                (d_part, activationRatio);
+                (d_part, activationRatio, nop);
         }
         cudaDeviceSynchronize();
 
@@ -385,6 +390,25 @@ void LDM::runSimulation_eki(){
 
         NuclideConfig* nucConfig = NuclideConfig::getInstance();
 
+        // Populate KernelScalars for particle movement kernel
+        KernelScalars ks{};
+        ks.turb_switch = g_turb_switch;
+        ks.drydep = g_drydep;
+        ks.wetdep = g_wetdep;
+        ks.raddecay = g_raddecay;
+        ks.num_particles = nop;
+        ks.is_rural = isRural ? 1 : 0;
+        ks.is_pg = isPG ? 1 : 0;
+        ks.is_gfs = isGFS ? 1 : 0;
+        ks.delta_time = dt;
+        ks.grid_start_lat = grid_config.start_lat;
+        ks.grid_start_lon = grid_config.start_lon;
+        ks.grid_lat_step = grid_config.lat_step;
+        ks.grid_lon_step = grid_config.lon_step;
+        ks.settling_vel = vsetaver;
+        ks.cunningham_fac = cunningham;
+        ks.T_matrix = d_T_matrix;
+
         // Use ensemble kernel for ensemble mode, regular kernel for single mode
         if (is_ensemble_mode) {
             // Ensemble mode: process all particles (d_nop × ensemble_size)
@@ -395,7 +419,8 @@ void LDM::runSimulation_eki(){
                 device_meteorological_flex_pres0,
                 device_meteorological_flex_unis1,
                 device_meteorological_flex_pres1,
-                total_particles);
+                total_particles,
+                ks);
         } else {
             // Single mode: process d_nop particles
             move_part_by_wind_mpi<<<blocks, threadsPerBlock>>>
@@ -403,7 +428,8 @@ void LDM::runSimulation_eki(){
                 device_meteorological_flex_unis0,
                 device_meteorological_flex_pres0,
                 device_meteorological_flex_unis1,
-                device_meteorological_flex_pres1);
+                device_meteorological_flex_pres1,
+                ks);
         }
         cudaDeviceSynchronize();
 
@@ -557,15 +583,7 @@ void LDM::runSimulation_eki_dump(){
     int lat_num = static_cast<int>(round((end_lat - start_lat) / lat_step) + 1);
     int lon_num = static_cast<int>(round((end_lon - start_lon) / lon_step) + 1);
 
-    err = cudaMemcpyToSymbol(d_start_lat, &start_lat, sizeof(float));
-    if (err != cudaSuccess) printf("Error copying start_lat to symbol: %s\n", cudaGetErrorString(err));
-    err = cudaMemcpyToSymbol(d_start_lon, &start_lon, sizeof(float));
-    if (err != cudaSuccess) printf("Error copying start_lon to symbol: %s\n", cudaGetErrorString(err));
-    err = cudaMemcpyToSymbol(d_lat_step, &lat_step, sizeof(float));
-    if (err != cudaSuccess) printf("Error copying lat_step to symbol: %s\n", cudaGetErrorString(err));
-    err = cudaMemcpyToSymbol(d_lon_step, &lon_step, sizeof(float));
-    if (err != cudaSuccess) printf("Error copying lon_step to symbol: %s\n", cudaGetErrorString(err));
-
+    // Grid parameters now passed via KernelScalars struct, not constant memory
     Mesh mesh(start_lat, start_lon, lat_step, lon_step, lat_num, lon_num);
 
     size_t meshSize = mesh.lat_count * mesh.lon_count * sizeof(float);
@@ -731,7 +749,7 @@ void LDM::runSimulation_eki_dump(){
         } else {
             // Single mode: use standard activation
             update_particle_flags<<<blocks, threadsPerBlock>>>
-                (d_part, activationRatio);
+                (d_part, activationRatio, nop);
         }
         cudaDeviceSynchronize();
 
@@ -744,6 +762,25 @@ void LDM::runSimulation_eki_dump(){
 
         NuclideConfig* nucConfig = NuclideConfig::getInstance();
 
+        // Populate KernelScalars for particle movement kernel
+        KernelScalars ks{};
+        ks.turb_switch = g_turb_switch;
+        ks.drydep = g_drydep;
+        ks.wetdep = g_wetdep;
+        ks.raddecay = g_raddecay;
+        ks.num_particles = nop;
+        ks.is_rural = isRural ? 1 : 0;
+        ks.is_pg = isPG ? 1 : 0;
+        ks.is_gfs = isGFS ? 1 : 0;
+        ks.delta_time = dt;
+        ks.grid_start_lat = grid_config.start_lat;
+        ks.grid_start_lon = grid_config.start_lon;
+        ks.grid_lat_step = grid_config.lat_step;
+        ks.grid_lon_step = grid_config.lon_step;
+        ks.settling_vel = vsetaver;
+        ks.cunningham_fac = cunningham;
+        ks.T_matrix = d_T_matrix;
+
         // Use ensemble kernel for ensemble mode, regular kernel for single mode
         if (is_ensemble_mode) {
             // Ensemble mode: process all particles (d_nop × ensemble_size)
@@ -754,7 +791,8 @@ void LDM::runSimulation_eki_dump(){
                 device_meteorological_flex_pres0,
                 device_meteorological_flex_unis1,
                 device_meteorological_flex_pres1,
-                total_particles);
+                total_particles,
+                ks);
         } else {
             // Single mode: process d_nop particles
             move_part_by_wind_mpi_dump<<<blocks, threadsPerBlock>>>
@@ -762,7 +800,8 @@ void LDM::runSimulation_eki_dump(){
                 device_meteorological_flex_unis0,
                 device_meteorological_flex_pres0,
                 device_meteorological_flex_unis1,
-                device_meteorological_flex_pres1);
+                device_meteorological_flex_pres1,
+                ks);
         }
         cudaDeviceSynchronize();
 

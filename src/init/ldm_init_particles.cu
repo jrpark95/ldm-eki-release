@@ -315,10 +315,7 @@ void LDM::calculateAverageSettlingVelocity(){
                 cunningham += fract[i-1]*cun;
             }
 
-            cudaError_t err = cudaMemcpyToSymbol(d_vsetaver, &vsetaver, sizeof(float));
-            if (err != cudaSuccess) printf("Error copying vsetaver to symbol: %s\n", cudaGetErrorString(err));
-            err = cudaMemcpyToSymbol(d_cunningham, &cunningham, sizeof(float));
-            if (err != cudaSuccess) printf("Error copying cunningham to symbol: %s\n", cudaGetErrorString(err));
+            // Note: vsetaver and cunningham are now passed via KernelScalars, no need for cudaMemcpyToSymbol
 
 
 }
@@ -331,10 +328,7 @@ void LDM::calculateSettlingVelocity(){
     if (radi == 0.0f) {
         vsetaver = 1.0f;
         cunningham = -1.0f;
-        cudaError_t err = cudaMemcpyToSymbol(d_vsetaver, &vsetaver, sizeof(float));
-        if (err != cudaSuccess) printf("Error copying vsetaver to symbol: %s\n", cudaGetErrorString(err));
-        err = cudaMemcpyToSymbol(d_cunningham, &cunningham, sizeof(float));
-        if (err != cudaSuccess) printf("Error copying cunningham to symbol: %s\n", cudaGetErrorString(err));
+        // Note: vsetaver and cunningham are now passed via KernelScalars, no need for cudaMemcpyToSymbol
         return;
     }
 
@@ -379,8 +373,5 @@ void LDM::calculateSettlingVelocity(){
         cunningham += fract[i-1]*cun;
     }
 
-    cudaError_t err = cudaMemcpyToSymbol(d_vsetaver, &vsetaver, sizeof(float));
-    if (err != cudaSuccess) printf("Error copying vsetaver to symbol: %s\n", cudaGetErrorString(err));
-    err = cudaMemcpyToSymbol(d_cunningham, &cunningham, sizeof(float));
-    if (err != cudaSuccess) printf("Error copying cunningham to symbol: %s\n", cudaGetErrorString(err));
+    // Note: vsetaver and cunningham are now passed via KernelScalars, no need for cudaMemcpyToSymbol
 }

@@ -10,10 +10,11 @@ __global__ void move_part_by_wind_mpi_dump(
     FlexUnis* device_meteorological_flex_unis0,
     FlexPres* device_meteorological_flex_pres0,
     FlexUnis* device_meteorological_flex_unis1,
-    FlexPres* device_meteorological_flex_pres1){
+    FlexPres* device_meteorological_flex_pres1,
+    const KernelScalars ks){
 
         int idx = blockIdx.x * blockDim.x + threadIdx.x;
-        if(idx >= d_nop) return;
+        if(idx >= ks.num_particles) return;
         //if(idx != 0) return;  // Process all particles
 
         // Debug output disabled for performance
@@ -445,8 +446,8 @@ __global__ void move_part_by_wind_mpi_dump(
         // p.prho = 2500.0;
 
         float vis = Dynamic_viscosity(temp)/rho;
-        float Re = p.radi/1.0e6*fabsf(d_vsetaver)/vis;
-        float settold = d_vsetaver;
+        float Re = p.radi/1.0e6*fabsf(ks.settling_vel)/vis;
+        float settold = ks.settling_vel;
         float settling;
         float c_d;
 
@@ -456,7 +457,7 @@ __global__ void move_part_by_wind_mpi_dump(
                 else if(Re<500.0) c_d = 18.5/pow(Re, 0.6);
                 else c_d = 0.44;
     
-                settling = -1.0*sqrt(4.0*_ga*p.radi/1.0e6*p.prho*d_cunningham/(3.0*c_d*rho));
+                settling = -1.0*sqrt(4.0*_ga*p.radi/1.0e6*p.prho*ks.cunningham_fac/(3.0*c_d*rho));
 
                 if(fabsf((settling-settold)/settling)<0.01) break;
     
@@ -556,15 +557,15 @@ __global__ void move_part_by_wind_mpi_dump(
 
             float ux, uy, uz, rw;
             
-            if(d_dt/Tu < 0.5) p.up = (1.0-d_dt/Tu)*p.up + curand_normal_double(&ss)*usig*sqrt(2.0*d_dt/Tu);
-            else p.up = exp(-d_dt/Tu)*p.up + curand_normal_double(&ss)*usig*sqrt(1.0-exp(-d_dt/Tu)*exp(-d_dt/Tu));
+            if(ks.delta_time/Tu < 0.5) p.up = (1.0-ks.delta_time/Tu)*p.up + curand_normal_double(&ss)*usig*sqrt(2.0*ks.delta_time/Tu);
+            else p.up = exp(-ks.delta_time/Tu)*p.up + curand_normal_double(&ss)*usig*sqrt(1.0-exp(-ks.delta_time/Tu)*exp(-ks.delta_time/Tu));
                     
-            if(d_dt/Tv < 0.5) p.vp = (1.0-d_dt/Tv)*p.vp + curand_normal_double(&ss)*vsig*sqrt(2.0*d_dt/Tv);
-            else p.vp = exp(-d_dt/Tv)*p.vp + curand_normal_double(&ss)*vsig*sqrt(1.0-exp(-d_dt/Tv)*exp(-d_dt/Tv));    
+            if(ks.delta_time/Tv < 0.5) p.vp = (1.0-ks.delta_time/Tv)*p.vp + curand_normal_double(&ss)*vsig*sqrt(2.0*ks.delta_time/Tv);
+            else p.vp = exp(-ks.delta_time/Tv)*p.vp + curand_normal_double(&ss)*vsig*sqrt(1.0-exp(-ks.delta_time/Tv)*exp(-ks.delta_time/Tv));    
         
-            if(TURB_SWITCH){}
+            if(ks.turb_switch){}
             else{
-                rw = exp(-d_dt/Tw);
+                rw = exp(-ks.delta_time/Tw);
                 float old_wp = p.wp;
                 p.wp = (rw*p.wp + curand_normal_double(&ss)*sqrt(1.0-rw*rw)*wsig + Tw*(1.0-rw)*(dsw2+drho/rho*wsig*wsig))*p.dir;
                 
@@ -581,40 +582,40 @@ __global__ void move_part_by_wind_mpi_dump(
 
             // Debug disabled for performance
             
-            // if (p.wp*d_dt < -p.z){
+            // if (p.wp*ks.delta_time < -p.z){
             //     p.dir = -1;
             //     float old_z = p.z;
-            //     p.z = -p.z - p.wp*d_dt;
+            //     p.z = -p.z - p.wp*ks.delta_time;
             //     if (idx == 0) {
             //         static int reflect_debug1 = 0;
             //         if (reflect_debug1 < 3) {
             //             printf("[Z_REFLECT1] Particle 0: old_z=%.6f, wp=%.6f, dt=%.6f, new_z=%.6f (NaN=%d)\n", 
-            //                    old_z, p.wp, d_dt, p.z, isnan(p.z));
+            //                    old_z, p.wp, ks.delta_time, p.z, isnan(p.z));
             //             reflect_debug1++;
             //         }
             //     }
             // }
-            // else if (p.wp*d_dt > (hmix-p.z)){
+            // else if (p.wp*ks.delta_time > (hmix-p.z)){
             //     p.dir = -1;
             //     float old_z = p.z;
-            //     p.z = -p.z - p.wp*d_dt + 2.*hmix;
+            //     p.z = -p.z - p.wp*ks.delta_time + 2.*hmix;
             //     if (idx == 0) {
             //         static int reflect_debug2 = 0;
             //         if (reflect_debug2 < 3) {
             //             printf("[Z_REFLECT2] Particle 0: old_z=%.6f, wp=%.6f, dt=%.6f, hmix=%.6f, new_z=%.6f (NaN=%d)\n", 
-            //                    old_z, p.wp, d_dt, hmix, p.z, isnan(p.z));
+            //                    old_z, p.wp, ks.delta_time, hmix, p.z, isnan(p.z));
             //             reflect_debug2++;
             //         }
             //     }
             // }
             // else{
             //     p.dir = 1;
-            //     p.z = p.z + p.wp*d_dt;
+            //     p.z = p.z + p.wp*ks.delta_time;
             //     if (idx == 0) {
             //         static int reflect_debug3 = 0;
             //         if (reflect_debug3 < 3) {
             //             printf("[Z_NORMAL] Particle 0: old_z=%.6f, wp=%.6f, dt=%.6f, new_z=%.6f (NaN=%d)\n", 
-            //                    p.z - p.wp*d_dt, p.wp, d_dt, p.z, isnan(p.z));
+            //                    p.z - p.wp*ks.delta_time, p.wp, ks.delta_time, p.z, isnan(p.z));
             //             reflect_debug3++;
             //         }
             //     }
@@ -622,21 +623,21 @@ __global__ void move_part_by_wind_mpi_dump(
 
 
 
-            //p.z += p.wp*d_dt;
+            //p.z += p.wp*ks.delta_time;
 
-            dx += xwind*d_dt;
-            dy += ywind*d_dt;
-            // dxt += p.up*d_dt;
-            // dyt += p.vp*d_dt;
+            dx += xwind*ks.delta_time;
+            dy += ywind*ks.delta_time;
+            // dxt += p.up*ks.delta_time;
+            // dyt += p.vp*ks.delta_time;
             float old_z_zwind = p.z;
-            // p.z += zwind*d_dt;
+            // p.z += zwind*ks.delta_time;
             
             // Debug first particle z update for NaN tracking
             if (idx == 0) {
                 static int z_debug_count = 0;
                 if (z_debug_count < 3) {
                     printf("[Z_UPDATE1] Particle 0: old_z=%.6f, zwind=%.6f, dt=%.6f, new_z=%.6f (NaN=%d)\n", 
-                           old_z_zwind, zwind, d_dt, p.z, isnan(p.z));
+                           old_z_zwind, zwind, ks.delta_time, p.z, isnan(p.z));
                     z_debug_count++;
                 }
             }
@@ -663,38 +664,38 @@ __global__ void move_part_by_wind_mpi_dump(
             //     uz = 0.0;
             // }
 
-            ux = GaussianRand(&ss, 0.0f, 1.0f)*sqrt(2.0*d_trop/d_dt);
-            uy = GaussianRand(&ss, 0.0f, 1.0f)*sqrt(2.0*d_trop/d_dt);
+            ux = GaussianRand(&ss, 0.0f, 1.0f)*sqrt(2.0*d_trop/ks.delta_time);
+            uy = GaussianRand(&ss, 0.0f, 1.0f)*sqrt(2.0*d_trop/ks.delta_time);
             uz = 0.0;
 
             // if(p.z < trop){
-            //     ux = GaussianRand(&ss, 0.0f, 1.0f)*sqrt(2.0*d_trop/d_dt);
-            //     uy = GaussianRand(&ss, 0.0f, 1.0f)*sqrt(2.0*d_trop/d_dt);
+            //     ux = GaussianRand(&ss, 0.0f, 1.0f)*sqrt(2.0*d_trop/ks.delta_time);
+            //     uy = GaussianRand(&ss, 0.0f, 1.0f)*sqrt(2.0*d_trop/ks.delta_time);
             //     uz = 0.0;
             // }
             // else if(p.z < trop+1000.0){
-            //     ux = GaussianRand(&ss, 0.0f, 1.0f)*sqrt(2.0*d_trop/d_dt*(1-(p.z-trop)/1000.0));
-            //     uy = GaussianRand(&ss, 0.0f, 1.0f)*sqrt(2.0*d_trop/d_dt*(1-(p.z-trop)/1000.0));
-            //     uz = GaussianRand(&ss, 0.0f, 1.0f)*sqrt(2.*d_strat/d_dt*(p.z-trop)/1000.0)+d_strat/1000.0;
+            //     ux = GaussianRand(&ss, 0.0f, 1.0f)*sqrt(2.0*d_trop/ks.delta_time*(1-(p.z-trop)/1000.0));
+            //     uy = GaussianRand(&ss, 0.0f, 1.0f)*sqrt(2.0*d_trop/ks.delta_time*(1-(p.z-trop)/1000.0));
+            //     uz = GaussianRand(&ss, 0.0f, 1.0f)*sqrt(2.*d_strat/ks.delta_time*(p.z-trop)/1000.0)+d_strat/1000.0;
             // }
             // else{
             //     ux = 0.0;
             //     uy = 0.0;
-            //     uz = GaussianRand(&ss, 0.0f, 1.0f)*sqrt(2.*d_strat/d_dt);
+            //     uz = GaussianRand(&ss, 0.0f, 1.0f)*sqrt(2.*d_strat/ks.delta_time);
             // }
             
 
-            dx += (xwind+ux)*d_dt;
-            dy += (ywind+uy)*d_dt;
+            dx += (xwind+ux)*ks.delta_time;
+            dy += (ywind+uy)*ks.delta_time;
             float old_z_strat = p.z;
-            p.z += (zwind+uz)*d_dt;
+            p.z += (zwind+uz)*ks.delta_time;
             
             // Debug second particle z update for NaN tracking
             if (idx == 0) {
                 static int z_debug_count2 = 0;
                 if (z_debug_count2 < 3) {
                     printf("[Z_UPDATE2] Particle 0: old_z=%.6f, zwind=%.6f, uz=%.6f, dt=%.6f, new_z=%.6f (NaN=%d)\n", 
-                           old_z_strat, zwind, uz, d_dt, p.z, isnan(p.z));
+                           old_z_strat, zwind, uz, ks.delta_time, p.z, isnan(p.z));
                     z_debug_count2++;
                 }
             }
@@ -714,7 +715,7 @@ __global__ void move_part_by_wind_mpi_dump(
 
         }
 
-        float r = exp(-2.0*d_dt/static_cast<float>(time_interval));
+        float r = exp(-2.0*ks.delta_time/static_cast<float>(time_interval));
         float rs = sqrt(1.0-r*r);
 
         if(p.z<0.0) {
@@ -748,18 +749,18 @@ __global__ void move_part_by_wind_mpi_dump(
         float decfact = 1.0;
         float prob_dry = 0.0f;
 
-        if (d_drydep && p.z < 2.0f * _href) {
+        if (ks.drydep && p.z < 2.0f * _href) {
             // if (idx == 0 && tstep <= 3) {
             //     printf("[GPU] DRYDEP enabled: z=%.2f, href=%.2f, vdep=%.6f\n", p.z, _href, vdep);
             // }
-            float arg = -vdep * d_dt / (2.0f * _href);
+            float arg = -vdep * ks.delta_time / (2.0f * _href);
             prob_dry = clamp01(1.0f - __expf(arg));
             // if (idx == 0 && tstep <= 3) {
             //     printf("[GPU] DRYDEP calculation: arg=%.6f, exp(arg)=%.6f, prob_dry=%.6f\n", arg, __expf(arg), prob_dry);
             // }
         } 
         //else if (idx == 0 && tstep <= 3) {
-        //     printf("[GPU] DRYDEP disabled or z too high: d_drydep=%d, z=%.2f\n", d_drydep, p.z);
+        //     printf("[GPU] DRYDEP disabled or z too high: ks.drydep=%d, z=%.2f\n", ks.drydep, p.z);
         // }
 
         float clouds_v, clouds_h;
@@ -775,7 +776,7 @@ __global__ void move_part_by_wind_mpi_dump(
 
             float wet_removal = 0.0f;
 
-            if (d_wetdep && (lsp >= 0.01f || convp >= 0.01f) && clouds_v > 1.0f) {
+            if (ks.wetdep && (lsp >= 0.01f || convp >= 0.01f) && clouds_v > 1.0f) {
                 // if (idx == 0 && tstep <= 3) {
                 //     printf("[GPU] WETDEP enabled: lsp=%.3f, convp=%.3f, clouds=%.1f\n", lsp, convp, clouds_v);
                 // }
@@ -813,25 +814,25 @@ __global__ void move_part_by_wind_mpi_dump(
                     }
                 }
 
-                wet_removal = clamp01((1.0f - __expf(-wetscav * d_dt)) * grfraction);
+                wet_removal = clamp01((1.0f - __expf(-wetscav * ks.delta_time)) * grfraction);
             } 
             //else if (idx == 0 && tstep <= 3) {
-            //     printf("[GPU] WETDEP disabled or no precipitation: d_wetdep=%d, lsp=%.3f, convp=%.3f\n", d_wetdep, lsp, convp);
+            //     printf("[GPU] WETDEP disabled or no precipitation: ks.wetdep=%d, lsp=%.3f, convp=%.3f\n", ks.wetdep, lsp, convp);
             // }
 
-            if (d_raddecay) {
+            if (ks.raddecay) {
                 // if (idx == 0 && tstep <= 5) {  // Only first particle, first few timesteps
                 //     printf("[GPU] RADDECAY enabled: applying T matrix\n");
                 // }
-                //apply_T_once_rowmajor_60(T_const, p.concentrations);
-                cram_decay_calculation(T_const, p.concentrations);
+                //apply_T_once_rowmajor_60(ks.T_matrix, p.concentrations);
+                cram_decay_calculation(ks.T_matrix, p.concentrations);
             } 
             // else if (idx == 0 && tstep <= 5) {
             //     printf("[GPU] RADDECAY disabled: skipping T matrix\n");
             // }
 
 
-            if (d_wetdep && wet_removal > 0.0f) {
+            if (ks.wetdep && wet_removal > 0.0f) {
                 #pragma unroll
                 for (int i = 0; i < N_NUCLIDES; ++i) {
                     float c = p.concentrations[i];
@@ -840,7 +841,7 @@ __global__ void move_part_by_wind_mpi_dump(
             }
 
 
-        if (d_drydep && prob_dry > 0.0f) {
+        if (ks.drydep && prob_dry > 0.0f) {
             // if (idx == 0 && tstep <= 3) {
             //     printf("[GPU] DRYDEP applying: prob_dry=%.6f\n", prob_dry);
             // }
@@ -852,7 +853,7 @@ __global__ void move_part_by_wind_mpi_dump(
             }
             
         } 
-        //else if (d_drydep && idx == 0 && tstep <= 3) {
+        //else if (ks.drydep && idx == 0 && tstep <= 3) {
         //     printf("[GPU] DRYDEP not applying: prob_dry=%.6f\n", prob_dry);
         // }
 

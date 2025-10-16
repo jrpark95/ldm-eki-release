@@ -67,6 +67,7 @@ struct SimulationConfig {
     bool isGFS;
     float settlingVelocity = 0.0;
     float cunninghamFactor = 0.0;
+    bool fixedScrollOutput = true;  // Terminal fixed-position output (1=enabled, 0=disabled)
 };
 
 struct MPIConfig {

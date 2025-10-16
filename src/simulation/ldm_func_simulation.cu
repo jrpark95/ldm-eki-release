@@ -486,7 +486,7 @@ void LDM::runSimulation_eki(){
             int bar_filled = (int)(progress / 100.0f * bar_width);
 
             // Terminal: Use ANSI codes for in-place update (goes to both terminal and log via TeeStreambuf)
-            if (!first_time) {
+            if (!first_time && g_sim.fixedScrollOutput) {
                 fprintf(stderr, "\033[3A");  // Move up 3 lines (only affects terminal, ignored in log file)
             }
 
@@ -858,7 +858,7 @@ void LDM::runSimulation_eki_dump(){
             int bar_filled = (int)(progress / 100.0f * bar_width);
 
             // Terminal: Use ANSI codes for in-place update (goes to both terminal and log via TeeStreambuf)
-            if (!first_time) {
+            if (!first_time && g_sim.fixedScrollOutput) {
                 fprintf(stderr, "\033[3A");  // Move up 3 lines (only affects terminal, ignored in log file)
             }
 

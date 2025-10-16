@@ -33,6 +33,9 @@ grid_w_output_path: ./grid/W
 mass_output_file: mass_ldm.txt
 main_output_file: output.txt
 
+# TERMINAL OUTPUT SETTINGS #
+fixed_scroll_output: 1
+
 # PHYSICAL CONSTANTS #
 pi: 3.141592
 pi180: 0.01745329

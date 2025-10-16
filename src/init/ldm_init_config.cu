@@ -23,8 +23,10 @@ void LDM::loadSimulationConfiguration(){
     isRural = g_config.getInt("Rural/Urban", 1);
     isPG = g_config.getInt("Pasquill-Gifford/Briggs-McElroy-Pooler", 1);
     isGFS = g_config.getInt("Data", 1);
-    
-    
+
+    // Load terminal output settings
+    g_sim.fixedScrollOutput = g_config.getInt("fixed_scroll_output", 1);
+
     // Load physics model settings
     g_turb_switch = g_config.getInt("turbulence_model", 0);
     g_drydep = g_config.getInt("dry_deposition_model", 0);

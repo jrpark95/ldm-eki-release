@@ -35,7 +35,8 @@ TARGET_RECEPTOR_DEBUG = ldm-receptor-debug
 
 # Core LDM class sources
 CORE_SOURCES = \
-    src/core/ldm.cu
+    src/core/ldm.cu \
+    src/core/device_storage.cu
 
 # Kernel module sources (Agent 1)
 KERNEL_SOURCES = \

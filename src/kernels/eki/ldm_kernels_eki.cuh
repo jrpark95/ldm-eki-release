@@ -9,6 +9,7 @@
 
 #pragma once
 #include "../../core/ldm.cuh"  // For LDM::LDMpart and constants
+#include "../../core/params.hpp"  // For KernelScalars
 
 // ============================================================================
 // EKI OBSERVATION KERNELS
@@ -60,7 +61,10 @@ __global__ void compute_eki_receptor_dose(
     int num_receptors,
     int num_timesteps,
     int time_idx,  // Which timestep slot to accumulate into
-    float DCF = 1.0f);
+    int num_particles,
+    float simulation_time_end,
+    float DCF,
+    const KernelScalars ks);
 
 /**
  * @kernel compute_eki_receptor_dose_ensemble
@@ -112,4 +116,7 @@ __global__ void compute_eki_receptor_dose_ensemble(
     int num_timesteps,
     int time_idx,  // Which timestep slot to accumulate into
     int total_particles,
-    float DCF = 1.0f);
+    int particles_per_ensemble,
+    float simulation_time_end,
+    float DCF,
+    const KernelScalars ks);

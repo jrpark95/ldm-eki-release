@@ -6,6 +6,7 @@
 #include "../core/ldm.cuh"
 #include "ldm_func_output.cuh"
 #include "../colors.h"
+#include "../core/params.hpp"
 
 // Test function to verify g_log_file works across compilation units
 void test_g_logonly_from_output_module() {
@@ -170,6 +171,26 @@ void LDM::computeReceptorObservations(int timestep, float currentTime) {
     int blockSize = 256;
     int numBlocks = (nop + blockSize - 1) / blockSize;
 
+    // Prepare KernelScalars structure
+    KernelScalars ks{};
+    extern int g_turb_switch;
+    GridConfig grid_config = loadGridConfig();
+    ks.turb_switch = g_turb_switch;
+    ks.drydep = 0;  // Not used in EKI kernels
+    ks.wetdep = 0;  // Not used in EKI kernels
+    ks.raddecay = 0;  // Not used in EKI kernels
+    ks.num_particles = nop;
+    ks.is_rural = isRural ? 1 : 0;
+    ks.is_pg = isPG ? 1 : 0;
+    ks.is_gfs = isGFS ? 1 : 0;
+    ks.delta_time = dt;
+    ks.grid_start_lat = grid_config.start_lat;
+    ks.grid_start_lon = grid_config.start_lon;
+    ks.grid_lat_step = grid_config.lat_step;
+    ks.grid_lon_step = grid_config.lon_step;
+    ks.settling_vel = vsetaver;
+    ks.cunningham_fac = cunningham;
+
     // Call kernel EVERY timestep to accumulate into correct time_idx slot
     compute_eki_receptor_dose<<<numBlocks, blockSize>>>(
         d_part,
@@ -179,7 +200,11 @@ void LDM::computeReceptorObservations(int timestep, float currentTime) {
         d_receptor_particle_count_2d,
         num_receptors,
         num_timesteps,
-        time_idx  // Pass time_idx to kernel
+        time_idx,   // Pass time_idx to kernel
+        nop,        // Pass number of particles instead of using d_nop
+        time_end,   // Pass time_end instead of using d_time_end
+        1.0f,       // DCF
+        ks          // KernelScalars
     );
 
     cudaDeviceSynchronize();
@@ -368,6 +393,29 @@ void LDM::computeReceptorObservations_AllEnsembles(int timestep, float currentTi
     int blockSize = 256;
     int numBlocks = (total_particles + blockSize - 1) / blockSize;
 
+    // Calculate particles per ensemble
+    int particles_per_ensemble = total_particles / num_ensembles;
+
+    // Prepare KernelScalars structure
+    KernelScalars ks{};
+    extern int g_turb_switch;
+    GridConfig grid_config = loadGridConfig();
+    ks.turb_switch = g_turb_switch;
+    ks.drydep = 0;  // Not used in EKI kernels
+    ks.wetdep = 0;  // Not used in EKI kernels
+    ks.raddecay = 0;  // Not used in EKI kernels
+    ks.num_particles = particles_per_ensemble;
+    ks.is_rural = isRural ? 1 : 0;
+    ks.is_pg = isPG ? 1 : 0;
+    ks.is_gfs = isGFS ? 1 : 0;
+    ks.delta_time = dt;
+    ks.grid_start_lat = grid_config.start_lat;
+    ks.grid_start_lon = grid_config.start_lon;
+    ks.grid_lat_step = grid_config.lat_step;
+    ks.grid_lon_step = grid_config.lon_step;
+    ks.settling_vel = vsetaver;
+    ks.cunningham_fac = cunningham;
+
     // Call kernel EVERY timestep to accumulate into correct time_idx slot
     compute_eki_receptor_dose_ensemble<<<numBlocks, blockSize>>>(
         d_part,
@@ -378,8 +426,12 @@ void LDM::computeReceptorObservations_AllEnsembles(int timestep, float currentTi
         num_ensembles,
         num_receptors,
         num_timesteps,
-        time_idx,  // Pass time_idx to kernel
-        total_particles
+        time_idx,              // Pass time_idx to kernel
+        total_particles,
+        particles_per_ensemble, // Pass particles per ensemble instead of using d_nop
+        time_end,               // Pass time_end instead of using d_time_end
+        1.0f,                   // DCF
+        ks                      // KernelScalars
     );
 
     cudaDeviceSynchronize();
@@ -565,6 +617,26 @@ void LDM::computeGridReceptorObservations(int timestep, float currentTime) {
     // Use receptor capture radius of 0.1 degrees (same as EKI default)
     float capture_radius = 0.1f;
 
+    // Prepare KernelScalars structure
+    KernelScalars ks{};
+    extern int g_turb_switch;
+    GridConfig grid_config = loadGridConfig();
+    ks.turb_switch = g_turb_switch;
+    ks.drydep = 0;  // Not used in EKI kernels
+    ks.wetdep = 0;  // Not used in EKI kernels
+    ks.raddecay = 0;  // Not used in EKI kernels
+    ks.num_particles = nop;
+    ks.is_rural = isRural ? 1 : 0;
+    ks.is_pg = isPG ? 1 : 0;
+    ks.is_gfs = isGFS ? 1 : 0;
+    ks.delta_time = dt;
+    ks.grid_start_lat = grid_config.start_lat;
+    ks.grid_start_lon = grid_config.start_lon;
+    ks.grid_lat_step = grid_config.lat_step;
+    ks.grid_lon_step = grid_config.lon_step;
+    ks.settling_vel = vsetaver;
+    ks.cunningham_fac = cunningham;
+
     // Grid receptors don't need time_idx - call with num_timesteps=1, time_idx=0
     compute_eki_receptor_dose<<<numBlocks, blockSize>>>(
         d_part,
@@ -574,8 +646,12 @@ void LDM::computeGridReceptorObservations(int timestep, float currentTime) {
         d_grid_receptor_dose,
         d_grid_receptor_particle_count,
         grid_receptor_total,
-        1,  // num_timesteps = 1 (no time dimension)
-        0   // time_idx = 0 (always use slot 0)
+        1,       // num_timesteps = 1 (no time dimension)
+        0,       // time_idx = 0 (always use slot 0)
+        nop,     // Pass number of particles instead of using d_nop
+        time_end, // Pass time_end instead of using d_time_end
+        1.0f,    // DCF
+        ks       // KernelScalars
     );
 
     cudaDeviceSynchronize();

@@ -6,6 +6,20 @@
 #include "ldm_kernels_eki.cuh"
 
 // ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * @brief Safe division helper to prevent NaN from division by zero
+ * @param num Numerator
+ * @param den Denominator
+ * @return num/den if den > 0, otherwise 0.0f
+ */
+__device__ __forceinline__ float safe_div(float num, float den) {
+    return (den > 0.0f) ? (num / den) : 0.0f;
+}
+
+// ============================================================================
 // EKI OBSERVATION SYSTEM IMPLEMENTATION
 // ============================================================================
 
@@ -18,10 +32,13 @@ __global__ void compute_eki_receptor_dose(
     int num_receptors,
     int num_timesteps,
     int time_idx,  // Which timestep slot to accumulate into
-    float DCF) {
+    int num_particles,
+    float simulation_time_end,
+    float DCF,
+    const KernelScalars ks) {
 
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= d_nop) return;
+    if (idx >= num_particles) return;
 
     LDM::LDMpart particle = particles[idx];
     if (particle.flag == 0) return; // Skip inactive particles
@@ -43,8 +60,11 @@ __global__ void compute_eki_receptor_dose(
         float lon_diff = fabs(lon - receptor_lon);
 
         if (lat_diff <= receptor_capture_radius && lon_diff <= receptor_capture_radius) {
-            // Calculate dose contribution from this particle
-            float dose_increment = particle.conc * DCF * d_time_end / static_cast<float>(d_nop);
+            // Calculate dose contribution from this particle (with safe division to prevent NaN)
+            float dose_increment = safe_div(
+                particle.conc * DCF * simulation_time_end,
+                static_cast<float>(num_particles)
+            );
 
             // Calculate 2D index: [timestep][receptor] - MATCH REFERENCE CODE
             // Reference: gamma_dose_idx = ens * (TIME * RECEPT) + r + time_idx * RECEPT
@@ -69,7 +89,10 @@ __global__ void compute_eki_receptor_dose_ensemble(
     int num_timesteps,
     int time_idx,  // Which timestep slot to accumulate into (same as single mode)
     int total_particles,
-    float DCF) {
+    int particles_per_ensemble,
+    float simulation_time_end,
+    float DCF,
+    const KernelScalars ks) {
 
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= total_particles) return;
@@ -97,8 +120,11 @@ __global__ void compute_eki_receptor_dose_ensemble(
         float lon_diff = fabs(lon - receptor_lon);
 
         if (lat_diff <= receptor_capture_radius && lon_diff <= receptor_capture_radius) {
-            // Calculate dose contribution from this particle
-            float dose_increment = particle.conc * DCF * d_time_end / static_cast<float>(d_nop);
+            // Calculate dose contribution from this particle (with safe division to prevent NaN)
+            float dose_increment = safe_div(
+                particle.conc * DCF * simulation_time_end,
+                static_cast<float>(particles_per_ensemble)
+            );
 
             // Calculate output index: [ensemble][timestep][receptor] - MATCH REFERENCE CODE
             // Reference: gamma_dose_idx = ens * (TIME * RECEPT) + r + time_idx * RECEPT

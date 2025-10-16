@@ -1,12 +1,58 @@
-/**
+/******************************************************************************
  * @file ldm_func_particle.cu
- * @brief Particle module implementation
- */
+ * @brief Particle management and GPU memory operations implementation
+ *
+ * @author Juryong Park
+ * @date 2025
+ *****************************************************************************/
 
 #include "../core/ldm.cuh"
 #include "ldm_func_particle.cuh"
 #include "colors.h"
 
+// ===========================================================================
+// GPU MEMORY MANAGEMENT
+// ===========================================================================
+
+/******************************************************************************
+ * @brief Allocate GPU memory and copy particle data from host to device
+ *
+ * Transfers the entire particle array from CPU memory to GPU global memory
+ * for CUDA kernel processing. This function performs:
+ *
+ * 1. GPU memory allocation (cudaMalloc) for particle array
+ * 2. Host-to-device memory transfer (cudaMemcpy)
+ * 3. Optional verification of transfer integrity
+ * 4. Error handling and diagnostics
+ *
+ * Memory Layout:
+ * - Particle data stored as array-of-structures (AoS) for simplicity
+ * - Each structure contains: position, velocity, concentration, nuclide data
+ * - Total size: sizeof(LDMpart) * num_particles
+ *
+ * Performance Considerations:
+ * - Large memory transfers (O(10-100 MB) for typical simulations)
+ * - One-time cost at initialization, amortized over simulation
+ * - Pinned host memory could improve transfer speed (future optimization)
+ *
+ * @pre part vector must be populated with initialized particle data
+ * @pre part vector must not be empty (checked internally)
+ *
+ * @post d_part pointer set to allocated GPU memory address
+ * @post GPU memory contains exact copy of host particle data
+ *
+ * @note Called once during simulation initialization
+ * @note GPU memory remains allocated until simulation end or explicit free
+ *
+ * @warning Exits program on allocation or transfer failure
+ * @warning Caller must ensure cudaFree(d_part) at cleanup
+ *
+ * @see LDM::part - Host particle vector
+ * @see LDM::d_part - Device particle pointer
+ *
+ * @author Juryong Park
+ * @date 2025
+ *****************************************************************************/
 void LDM::allocateGPUMemory(){
         if (part.empty()) {
             std::cerr << Color::RED << "[ERROR] " << Color::RESET << "No particles to copy to device (part vector is empty)" << std::endl;
@@ -65,6 +111,49 @@ void LDM::allocateGPUMemory(){
         }
     }
 
+// ===========================================================================
+// DIAGNOSTIC TOOLS - NaN DETECTION
+// ===========================================================================
+
+/******************************************************************************
+ * @brief Check particle data for NaN values (host memory, debug only)
+ *
+ * Scans first N particles in host memory for NaN (Not-a-Number) values in
+ * critical fields: position, velocity, wind components, turbulence. This
+ * diagnostic tool helps identify numerical instabilities that could corrupt
+ * simulation results.
+ *
+ * Common NaN Sources:
+ * - Division by zero in kernel calculations
+ * - Invalid mathematical operations (sqrt of negative, log of zero)
+ * - Uninitialized memory reads
+ * - Accumulated numerical errors leading to overflow
+ *
+ * Debug Strategy:
+ * - Called at key simulation checkpoints (before/after major operations)
+ * - Prints detailed information for first few NaN-containing particles
+ * - Limits output to prevent log flooding (max 3 particles reported)
+ * - Only active when DEBUG macro defined
+ *
+ * @param[in] location Descriptive string for identifying call site
+ *                     - Example: "After particle advection", "Before kernel launch"
+ *                     - Appears in debug output for tracking
+ * @param[in] max_check Maximum number of particles to check
+ *                      - Default: Check first max_check particles
+ *                      - Reduces overhead for large particle counts
+ *
+ * @note Only compiled when DEBUG macro is defined
+ * @note Operates on host memory (part vector), not GPU memory
+ * @note Does not modify particle data, read-only diagnostic
+ *
+ * @warning Performance impact: O(max_check) per call, negligible for small values
+ * @warning Does not check GPU memory directly - use after cudaMemcpy for GPU data
+ *
+ * @see checkMeteoDataNaN() for meteorological data validation
+ *
+ * @author Juryong Park
+ * @date 2025
+ *****************************************************************************/
 void LDM::checkParticleNaN(const std::string& location, int max_check) {
 #ifdef DEBUG
     if (part.empty()) {
@@ -104,6 +193,48 @@ void LDM::checkParticleNaN(const std::string& location, int max_check) {
 #endif
 }
 
+/******************************************************************************
+ * @brief Check meteorological data for NaN values (host memory, debug only)
+ *
+ * Validates meteorological fields (wind velocity, density) in preloaded
+ * EKI cache for numerical integrity. Scans both host-side cache and current
+ * GPU meteorological data slots to detect corrupted data before kernel use.
+ *
+ * Meteorological Data Sources:
+ * - g_eki_meteo.host_flex_pres_data: Preloaded pressure-level data (UU, VV, WW, RHO, DRHO)
+ * - g_eki_meteo.host_flex_unis_data: Preloaded surface-level data
+ * - device_meteorological_flex_pres0/1: Current GPU working buffers
+ * - device_meteorological_flex_unis0/1: Current GPU surface buffers
+ *
+ * Common Issues Detected:
+ * - GFS file read errors (corrupted netCDF files)
+ * - Interpolation artifacts at domain boundaries
+ * - Memory corruption during GPU transfers
+ * - Uninitialized GPU buffer slots
+ *
+ * Debug Strategy:
+ * - Check first 100 grid points (adequate sample for detection)
+ * - Verify both past/future meteorological slots on GPU
+ * - Compare host cache with GPU data for consistency
+ * - Only active in DEBUG builds to minimize performance impact
+ *
+ * @param[in] location Descriptive string for call site identification
+ *                     - Example: "After meteorological update", "Before kernel launch"
+ *                     - Used in debug output for tracking
+ *
+ * @note Only compiled when DEBUG macro is defined
+ * @note Checks both host EKI cache and current GPU buffers
+ * @note Requires g_eki_meteo.is_initialized == true for meaningful check
+ *
+ * @warning Performs GPU-to-host memcpy for sampling - adds latency
+ * @warning Only checks small sample (100 points) - not exhaustive validation
+ *
+ * @see checkParticleNaN() for particle data validation
+ * @see preloadAllEKIMeteorologicalData() for cache initialization
+ *
+ * @author Juryong Park
+ * @date 2025
+ *****************************************************************************/
 void LDM::checkMeteoDataNaN(const std::string& location) {
 #ifdef DEBUG
     // Check first meteorological data in host memory
@@ -172,4 +303,3 @@ void LDM::checkMeteoDataNaN(const std::string& location) {
     }
 #endif
 }
-

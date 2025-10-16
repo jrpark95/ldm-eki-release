@@ -1,29 +1,59 @@
-/**
+/******************************************************************************
  * @file ldm.cu
- * @brief Implementation of LDM class member functions and helper functions
- */
+ * @brief Implementation of LDM class constructors, destructors, and helpers
+ *
+ * This file contains:
+ * - Global variable definitions for simulation configuration
+ * - LDM class constructor/destructor implementations
+ * - EKIMeteorologicalData cleanup functions
+ * - Grid configuration helper functions
+ *
+ * @author Juryong Park
+ * @date 2025
+ *****************************************************************************/
 
 #include "ldm.cuh"
 
-// ============================================================================
+// ===========================================================================
 // Global Variable Definitions (declared in ldm.cuh as extern)
-// ============================================================================
-// Note: These must be defined AFTER including ldm.cuh but before LDM class implementation
+// ===========================================================================
+// Note: These must be defined AFTER including ldm.cuh but before LDM class
+//       implementation to avoid multiple definition errors in the linker.
+//       Each .cu file that includes ldm.cuh sees the extern declarations,
+//       but only ldm.cu provides the actual storage allocation.
 
-SimulationConfig g_sim;
-MPIConfig g_mpi;
-EKIConfig g_eki;
-ConfigReader g_config;
-EKIMeteorologicalData g_eki_meteo;
-std::vector<float> flex_hgt;
+SimulationConfig g_sim;            // Simulation parameters (time, particles, etc.)
+MPIConfig g_mpi;                   // MPI/species configuration (legacy compatibility)
+EKIConfig g_eki;                   // EKI algorithm parameters and receptor settings
+ConfigReader g_config;             // Generic configuration file reader
+EKIMeteorologicalData g_eki_meteo; // Preloaded meteorology for EKI iterations
+std::vector<float> flex_hgt;       // Vertical height levels (host copy)
 
-// Log-only output stream (initialized in main_eki.cu)
+// Log-only output stream (initialized in main_eki.cu, nullptr otherwise)
 std::ostream* g_logonly = nullptr;
 
-// ============================================================================
+// ===========================================================================
 // LDM Class Constructor and Destructor
-// ============================================================================
+// ===========================================================================
 
+/******************************************************************************
+ * @brief Default constructor for LDM class
+ *
+ * Initializes all member variables to safe default values. GPU memory pointers
+ * are set to nullptr to enable safe destruction and conditional deallocation.
+ *
+ * Member Initialization:
+ * - Ensemble mode flags: false/0
+ * - GPU pointers: nullptr (allocated later in allocateGPUMemory())
+ * - Observation counters: 0
+ * - Grid receptor mode: disabled
+ *
+ * @note Actual GPU memory allocation happens in allocateGPUMemory()
+ * @note Configuration loading happens via load*Config() methods
+ *
+ * @author Juryong Park
+ * @date 2025
+ *****************************************************************************/
 LDM::LDM()
     : is_ensemble_mode(false)
     , ensemble_size(0)
@@ -57,9 +87,22 @@ LDM::LDM()
     , device_meteorological_flex_unis1(nullptr)
     , device_meteorological_flex_unis2(nullptr)
 {
-    // Constructor implementation - initialize member variables
+    // Constructor body empty - all initialization in member initializer list
 }
 
+/******************************************************************************
+ * @brief Destructor for LDM class
+ *
+ * Releases GPU memory allocated for CRAM decay matrix and height levels.
+ * Other GPU resources (particles, meteorology, observations) are cleaned up
+ * by their respective cleanup functions (cleanupEKIObservationSystem, etc.)
+ *
+ * @note Uses conditional deallocation (if ptr != nullptr) for safety
+ * @note cudaFree(nullptr) is safe but checking explicitly is clearer
+ *
+ * @author Juryong Park
+ * @date 2025
+ *****************************************************************************/
 LDM::~LDM() {
     // Free CRAM T matrix GPU memory
     if (d_T_matrix != nullptr) {
@@ -73,17 +116,56 @@ LDM::~LDM() {
         d_flex_hgt = nullptr;
     }
 
-    // Cleanup other resources
+    // Other resources cleaned up by explicit cleanup functions:
+    // - Particles: allocateGPUMemory() manages lifecycle
+    // - Observations: cleanupEKIObservationSystem()
+    // - Meteorology: cleanupEKIMeteorologicalData()
 }
 
-// ============================================================================
+// ===========================================================================
 // EKIMeteorologicalData Implementation
-// ============================================================================
+// ===========================================================================
 
+/******************************************************************************
+ * @brief Destructor for EKIMeteorologicalData
+ *
+ * Automatically releases all allocated memory (host and GPU) when the
+ * meteorological data cache goes out of scope. Calls cleanup() internally.
+ *
+ * @author Juryong Park
+ * @date 2025
+ *****************************************************************************/
 EKIMeteorologicalData::~EKIMeteorologicalData() {
     cleanup();
 }
 
+/******************************************************************************
+ * @brief Release all preloaded meteorological data from memory
+ *
+ * This function performs comprehensive cleanup of the EKI meteorology cache:
+ * 1. Deallocate host memory arrays (FlexPres, FlexUnis, height data)
+ * 2. Deallocate GPU memory for all timesteps
+ * 3. Free pointer arrays on GPU
+ * 4. Reset metadata (sizes, counts, initialization flag)
+ *
+ * Memory Release Order (Important):
+ * - First: Retrieve GPU pointers to individual timestep arrays
+ * - Second: Free individual timestep arrays on GPU
+ * - Third: Free pointer arrays themselves on GPU
+ * - Fourth: Free host memory and clear vectors
+ *
+ * Error Handling:
+ * - Uses try/catch to prevent cleanup failures from crashing program
+ * - Continues cleanup even if individual cudaFree calls fail
+ * - Logs errors to stderr with color-coded messages
+ *
+ * @note Safe to call multiple times (checks is_initialized flag)
+ * @note Called automatically by destructor
+ * @note After cleanup, preloadAllEKIMeteorologicalData() can be called again
+ *
+ * @author Juryong Park
+ * @date 2025
+ *****************************************************************************/
 void EKIMeteorologicalData::cleanup() {
     if (!is_initialized) {
         return;
@@ -190,10 +272,43 @@ void EKIMeteorologicalData::cleanup() {
     }
 }
 
-// ============================================================================
+// ===========================================================================
 // Grid Configuration Helper Function
-// ============================================================================
+// ===========================================================================
 
+/******************************************************************************
+ * @brief Load grid configuration from source.txt file
+ *
+ * Parses the [GRID_CONFIG] section in source.txt to extract parameters for
+ * spatial discretization of the simulation domain. Used for grid-based output
+ * and concentration field calculations.
+ *
+ * Configuration Format (in source.txt):
+ * [GRID_CONFIG]
+ * start_lat: 36.0
+ * start_lon: 140.0
+ * end_lat: 37.0
+ * end_lon: 141.0
+ * lat_step: 0.5
+ * lon_step: 0.5
+ *
+ * Grid Dimensions:
+ * - Latitude range: [start_lat, end_lat] degrees
+ * - Longitude range: [start_lon, end_lon] degrees
+ * - Grid cells: (end_lat - start_lat) / lat_step × (end_lon - start_lon) / lon_step
+ *
+ * @return GridConfig structure with parsed values (or defaults if file not found)
+ *         Default values: lat [36°, 37°], lon [140°, 141°], step 0.5°
+ *
+ * @note Returns default configuration if file cannot be opened
+ * @note Ignores lines starting with '#' (comments)
+ * @note Prints warning if invalid values encountered but continues parsing
+ *
+ * @see GridConfig struct definition in ldm.cuh
+ *
+ * @author Juryong Park
+ * @date 2025
+ *****************************************************************************/
 GridConfig loadGridConfig() {
     GridConfig config;
 
@@ -209,27 +324,33 @@ GridConfig loadGridConfig() {
     bool in_grid_section = false;
 
     while (std::getline(file, line)) {
+        // Trim whitespace
         line.erase(0, line.find_first_not_of(" \t"));
         line.erase(line.find_last_not_of(" \t\r\n") + 1);
 
+        // Skip empty lines and comments
         if (line.empty() || line[0] == '#') continue;
 
+        // Detect [GRID_CONFIG] section
         if (line == "[GRID_CONFIG]") {
             in_grid_section = true;
             continue;
         }
 
+        // Exit grid section when encountering another section
         if (line.find('[') != std::string::npos) {
             in_grid_section = false;
             continue;
         }
 
+        // Parse key-value pairs within grid section
         if (in_grid_section) {
             size_t pos = line.find(':');
             if (pos != std::string::npos) {
                 std::string key = line.substr(0, pos);
                 std::string value = line.substr(pos + 1);
 
+                // Trim key and value
                 key.erase(0, key.find_first_not_of(" \t"));
                 key.erase(key.find_last_not_of(" \t") + 1);
                 value.erase(0, value.find_first_not_of(" \t"));

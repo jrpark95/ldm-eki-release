@@ -1,3 +1,28 @@
+/******************************************************************************
+ * @file main_eki.cu
+ * @brief Main entry point for LDM-EKI source term inversion system
+ *
+ * This file implements the main loop for the Ensemble Kalman Inversion (EKI)
+ * framework, which couples a CUDA-accelerated Lagrangian dispersion model (LDM)
+ * with a Python-based ensemble Kalman filter for atmospheric source term
+ * estimation.
+ *
+ * System Architecture:
+ * - Two-process design: C++/CUDA forward model + Python inverse model
+ * - Communication: POSIX shared memory (/dev/shm/ldm_eki_*)
+ * - Iteration loop: Python proposes ensemble states → LDM simulates forward
+ *   model → Observations sent back to Python → Python updates ensemble
+ *
+ * Key Components:
+ * 1. Single-mode simulation: Run forward model with true emissions
+ * 2. Ensemble-mode simulation: Run N forward models in parallel
+ * 3. IPC communication: Share observations and ensemble states
+ * 4. Automatic visualization: Generate comparison plots after completion
+ *
+ * @author Juryong Park
+ * @date 2025
+ *****************************************************************************/
+
 #include "core/ldm.cuh"
 #include "physics/ldm_nuclides.cuh"
 #include "ipc/ldm_eki_reader.cuh"
@@ -22,33 +47,68 @@
 #include <random>
 #include <numeric>
 
-// Physics model global variables (will be loaded from setting.txt)
-int g_num_nuclides;  // Default value, updated from nuclide config
-int g_turb_switch;    // Default values, overwritten by setting.txt
-int g_drydep;
-int g_wetdep;
-int g_raddecay;
+// ===========================================================================
+// Global Variables
+// ===========================================================================
+
+// Physics model switches (loaded from physics.conf)
+int g_num_nuclides;  // Number of nuclides in decay chain (1-60)
+int g_turb_switch;   // Turbulent diffusion enable flag (0=off, 1=on)
+int g_drydep;        // Dry deposition enable flag (0=off, 1=on)
+int g_wetdep;        // Wet deposition enable flag (0=off, 1=on)
+int g_raddecay;      // Radioactive decay enable flag (0=off, 1=on)
 
 // Log file handle (global for cross-compilation-unit access)
+// This pointer is initialized in main() and accessible from other modules
+// for writing detailed debug information that should appear only in logs,
+// not in terminal output.
 std::ofstream* g_log_file = nullptr;
 
+/******************************************************************************
+ * @brief Main execution loop for EKI-based source term inversion
+ *
+ * Orchestrates the complete EKI workflow:
+ * 1. Initialization: Load configuration, allocate GPU memory, preload meteorology
+ * 2. Single-mode run: Execute forward model with true emissions, collect observations
+ * 3. Python EKI launch: Start background Python process for inversion
+ * 4. Iteration loop: Exchange ensemble states and observations via shared memory
+ * 5. Cleanup: Release resources, generate visualization
+ *
+ * Workflow Details:
+ * - Single mode: Generates "truth" observations for Python to match
+ * - Ensemble mode: Runs N forward models in parallel (e.g., 100 ensembles)
+ * - IPC: POSIX shared memory (/dev/shm/ldm_eki_*) for high-performance data exchange
+ * - VTK output: Disabled during iterations for performance, enabled only on final iteration
+ *
+ * @param[in] argc Command line argument count (currently unused)
+ * @param[in] argv Command line arguments (currently unused)
+ *
+ * @return 0 on success, 1 on error
+ *
+ * @note Automatically invokes cleanup.py to remove stale data before execution
+ * @note Automatically invokes compare_all_receptors.py for visualization after completion
+ * @note Logs all output to logs/ldm_eki_simulation.log with color codes stripped
+ *
+ * @author Juryong Park
+ * @date 2025
+ *****************************************************************************/
 int main(int argc, char** argv) {
 
-    // Single process mode (MPI removed)
-
-    // Clean logs directory and redirect output
+    // ===========================================================================
+    // System Initialization
+    // ===========================================================================
     std::cout << "\n" << Color::BOLD << Color::CYAN
               << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
               << "  LDM-EKI: Source Term Inversion with Ensemble Kalman Methods\n"
               << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
               << Color::RESET << std::endl;
 
-    // Create necessary directories
+    // Create output directory structure for simulation products
     std::cout << Color::CYAN << "[SYSTEM] " << Color::RESET << "Creating output directories..." << std::flush;
     system("mkdir -p logs output/plot_vtk_prior output/plot_vtk_ens output/results logs/eki_iterations 2>/dev/null");
     std::cout << " done\n";
 
-    // Use centralized cleanup script for data cleanup
+    // Invoke centralized cleanup script to remove stale data from previous runs
     std::cout << Color::CYAN << "[SYSTEM] " << Color::RESET << "Running cleanup script..." << std::endl;
     int cleanup_ret = system("python3 util/cleanup.py");
 
@@ -58,20 +118,37 @@ int main(int argc, char** argv) {
         std::cout << Color::YELLOW << "Cleanup skipped or failed (code: " << cleanup_ret << ")\n"
                   << Color::RESET << std::endl;
     }
-    
-    // Open log file for output redirection
+
+    // Open log file for dual-stream output (console + file)
     std::ofstream logFile("logs/ldm_eki_simulation.log");
     if (!logFile.is_open()) {
         std::cerr << Color::RED << "[ERROR] Could not open log file logs/ldm_eki_simulation.log"
                   << Color::RESET << std::endl;
         return 1;
     }
-    
-    // Redirect cout and cerr to log file while keeping console output
+
+    // Save original stream buffers for restoration at program exit
     std::streambuf* coutbuf = std::cout.rdbuf();
     std::streambuf* cerrbuf = std::cerr.rdbuf();
 
-    // Color-stripping streambuf: removes ANSI escape codes before writing to log
+    /**************************************************************************
+     * @brief Stream buffer that strips ANSI color codes before writing to file
+     *
+     * This class implements a state machine to filter out ANSI escape sequences
+     * (color codes) from the output stream, ensuring log files contain only
+     * plain text. Terminal output remains colorful via the TeeStreambuf class.
+     *
+     * State Machine:
+     * - NORMAL: Regular character output
+     * - ESC: Detected escape character (0x1B), waiting for '['
+     * - CSI: In Control Sequence Introducer, skipping until final byte
+     *
+     * @note Only CSI sequences (ESC [ ...) are filtered, not other escapes
+     * @note Final byte range: 0x40-0x7E per ANSI X3.64 standard
+     *
+     * @author Juryong Park
+     * @date 2025
+     *************************************************************************/
     class ColorStripStreambuf : public std::streambuf {
         std::streambuf* dest;
         enum State { NORMAL, ESC, CSI };
@@ -115,7 +192,22 @@ int main(int argc, char** argv) {
         }
     };
 
-    // Tee streambuf: outputs to console and color-stripped log file
+    /**************************************************************************
+     * @brief Stream buffer that duplicates output to console and log file
+     *
+     * This "tee" implementation sends all output to both the console (with
+     * colors) and the log file (stripped of color codes via ColorStripStreambuf).
+     *
+     * Usage pattern:
+     * 1. Create ColorStripStreambuf wrapping log file
+     * 2. Create TeeStreambuf wrapping console and ColorStripStreambuf
+     * 3. Redirect std::cout.rdbuf() to TeeStreambuf
+     *
+     * Result: std::cout << "text" → both console and log file
+     *
+     * @author Juryong Park
+     * @date 2025
+     *************************************************************************/
     class TeeStreambuf : public std::streambuf {
         std::streambuf* console;
         ColorStripStreambuf* logStrip;
@@ -142,22 +234,22 @@ int main(int argc, char** argv) {
     std::cout.rdbuf(&tee_cout);
     std::cerr.rdbuf(&tee_cerr);
 
-    // Point global log file handle to this log file
+    // Initialize global log file handle for cross-compilation-unit access
     g_log_file = &logFile;
 
-    // Test log-only stream immediately
+    // Verify log file accessibility from main thread
     if (g_log_file && g_log_file->is_open()) {
         *g_log_file << "[TEST] g_log_file initialized successfully\n";
         g_log_file->flush();
     }
 
-    // Test cross-compilation-unit access
+    // Verify cross-compilation-unit access from other modules
     test_g_logonly_from_output_module();
 
     std::cout << Color::CYAN << "[SYSTEM] " << Color::RESET
               << "Logging to " << Color::BOLD << "logs/ldm_eki_simulation.log" << Color::RESET << "\n" << std::endl;
 
-    // Log-only: detailed startup information
+    // Write detailed startup information to log file (not displayed in terminal)
     if (g_log_file) {
         *g_log_file << "\n========================================\n";
         *g_log_file << "LDM-EKI Detailed Simulation Log\n";
@@ -167,7 +259,11 @@ int main(int argc, char** argv) {
         *g_log_file << "========================================\n\n";
     }
 
-    // Load nuclide configuration
+    // ===========================================================================
+    // Configuration Loading
+    // ===========================================================================
+
+    // Load nuclide decay chain configuration
     NuclideConfig* nucConfig = NuclideConfig::getInstance();
     std::string nuclide_config_file = "./input/nuclides_config_1.txt";
 
@@ -177,28 +273,28 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Update global nuclide count
+    // Store nuclide count in global variable for kernel access
     g_num_nuclides = nucConfig->getNumNuclides();
 
-    // Log-only: nuclide configuration details
+    // Log nuclide configuration details (log file only, not terminal)
     *g_log_file << "[CONFIG] Nuclide configuration loaded successfully\n";
     *g_log_file << "  Number of nuclides: " << g_num_nuclides << "\n";
     *g_log_file << "  Configuration file: " << nuclide_config_file << "\n\n";
 
     LDM ldm;
 
-    // Modern configuration loading (Phase 2 integration)
+    // Load modernized configuration files (Phase 2 architecture)
     std::cout << "\n" << Color::BOLD << "Loading Configuration" << Color::RESET << "\n";
 
-    ldm.loadSimulationConfig();      // simulation.conf
-    ldm.loadPhysicsConfig();          // physics.conf
-    ldm.loadSourceConfig();           // source.conf
-    ldm.loadNuclidesConfig();         // nuclides.conf
-    ldm.loadAdvancedConfig();         // advanced.conf
+    ldm.loadSimulationConfig();      // simulation.conf - Time, particles, domain
+    ldm.loadPhysicsConfig();          // physics.conf - Turbulence, deposition, decay
+    ldm.loadSourceConfig();           // source.conf - Source location and strength
+    ldm.loadNuclidesConfig();         // nuclides.conf - Decay chain specification
+    ldm.loadAdvancedConfig();         // advanced.conf - Advanced numerical settings
 
     std::cout << std::endl;
 
-    // Log-only: simulation configuration details
+    // Log physics model switches (log file only, not terminal)
     *g_log_file << "[CONFIG] Modernized configuration loaded\n";
     *g_log_file << "  Physics switches: TURB=" << g_turb_switch
             << " DRYDEP=" << g_drydep

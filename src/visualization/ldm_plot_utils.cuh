@@ -1,13 +1,27 @@
 /**
  * @file ldm_plot_utils.cuh
  * @brief Utility functions for visualization and validation output
+ * @author Juryong Park
+ * @date 2025
  *
- * @details Provides helper functions for VTK output (byte swapping, particle counting)
- *          and validation/logging functions for debugging particle concentrations
- *          and nuclide decay processes.
+ * @details Provides two categories of functions:
  *
- * @note Validation functions are used for development/debugging and can be
- *       disabled in production builds for better performance
+ *          **1. VTK Utilities** (Production code)
+ *          - Byte-order conversion for VTK binary format
+ *          - Active particle counting for file headers
+ *          - Used in all VTK output operations
+ *
+ *          **2. Validation Functions** (Development/debugging)
+ *          - Time-series logging of particle concentrations
+ *          - Nuclide decay analysis and CRAM verification
+ *          - Gridded concentration export for model comparison
+ *          - CSV output for external analysis
+ *
+ * @note Validation functions can be disabled in production builds by
+ *       commenting out their calls in the main simulation loop
+ *
+ * @performance Validation functions involve GPU→Host copies and file I/O,
+ *              potentially slowing down simulation by 5-10%
  */
 
 #pragma once
@@ -24,13 +38,20 @@
  * @method LDM::countActiveParticles
  * @brief Count number of active particles in simulation
  *
- * @details Iterates through particle array and counts particles with flag == 1.
- *          Used before VTK output to determine file size and allocation.
+ * @details Iterates through host particle array and counts particles with
+ *          flag == 1 (active). Used to determine the POINTS count in VTK
+ *          file headers before writing geometry data.
  *
- * @return int Number of active particles
+ * @return int Number of active particles (flag == 1)
  *
- * @complexity O(N) where N = total particle count
- * @note Operates on host memory (part vector)
+ * @pre Particles must be copied from GPU to host (part vector)
+ * @complexity O(N) where N = total particle count (nop)
+ * @note Operates on host memory only (part vector, not d_part)
+ *
+ * @example
+ * cudaMemcpy(part.data(), d_part, nop * sizeof(LDMpart), cudaMemcpyDeviceToHost);
+ * int active_count = countActiveParticles();
+ * // Use active_count in VTK header: "POINTS <active_count> float"
  */
 int countActiveParticles();
 
@@ -38,13 +59,21 @@ int countActiveParticles();
  * @method LDM::swapByteOrder (float overload)
  * @brief Convert float from little-endian to big-endian for VTK binary format
  *
- * @details VTK binary format requires big-endian byte order. This function
- *          swaps bytes in-place for x86 systems (little-endian).
+ * @details VTK Legacy format specifies big-endian byte order for binary data.
+ *          On x86 systems (little-endian), we must reverse the byte order
+ *          before writing to file. This function swaps 4 bytes in-place:
+ *          [B0 B1 B2 B3] → [B3 B2 B1 B0]
  *
- * @param[in,out] value Float value to byte-swap
+ * @param[in,out] value Float value to byte-swap (modified in-place)
  *
- * @note Modifies value in-place
- * @complexity O(1)
+ * @complexity O(1) - two byte swaps
+ * @note Function is a no-op on big-endian systems (but called anyway for portability)
+ * @note Must be called before every binary write to VTK file
+ *
+ * @example
+ * float x = 123.456f;
+ * swapByteOrder(x);
+ * vtkFile.write(reinterpret_cast<char*>(&x), sizeof(float));
  */
 void swapByteOrder(float& value);
 
@@ -52,10 +81,13 @@ void swapByteOrder(float& value);
  * @method LDM::swapByteOrder (int overload)
  * @brief Convert integer from little-endian to big-endian for VTK binary format
  *
- * @param[in,out] value Integer value to byte-swap
+ * @details Integer overload of swapByteOrder. Used for integer attributes
+ *          like time_idx in VTK POINT_DATA sections.
  *
- * @note Modifies value in-place
- * @complexity O(1)
+ * @param[in,out] value Integer value to byte-swap (modified in-place)
+ *
+ * @complexity O(1) - two byte swaps
+ * @note Same byte-swapping logic as float version
  */
 void swapByteOrder(int& value);
 
@@ -159,24 +191,37 @@ void exportValidationData(int timestep, float currentTime);
 
 /**
  * @method LDM::exportConcentrationGrid
- * @brief Export 3D gridded concentration field
+ * @brief Export 3D gridded concentration field for spatial analysis
  *
- * @details Maps particles to 100×100×20 grid covering Fukushima region
- *          (139-143°E, 36-39°N, 0-2000m) and exports to CSV.
+ * @details Maps particle cloud to regular 3D grid for easier comparison with
+ *          other models and observational data. Grid domain is designed for
+ *          Fukushima region but can be adjusted in implementation.
  *
  * @param[in] timestep Current simulation timestep
  * @param[in] currentTime Current simulation time [seconds]
  *
  * @post Creates validation/concentration_grid_XXXXX.csv
  *
- * @note Grid resolution: 0.04° × 0.03° × 100m
- * @note Only exports cells with concentration > 0 (sparse format)
+ * @grid_specification
+ * - Domain: 139-143°E, 36-39°N, 0-2000m
+ * - Dimensions: 100 × 100 × 20 cells
+ * - Resolution: 0.04° × 0.03° × 100m
+ * - Total cells: 200,000
+ *
+ * @output_format CSV with columns:
+ * - x_index, y_index, z_index: Grid cell indices
+ * - lon, lat, alt: Cell center coordinates
+ * - concentration: Accumulated particle concentration [Bq/m³]
+ * - particle_count: Number of particles in cell
+ *
+ * @optimization Sparse output: Only cells with concentration > 0 are written
  *
  * @algorithm
- *   1. Initialize 100×100×20 grid
+ *   1. Initialize 100×100×20 grid with zeros
  *   2. For each active particle:
- *      - Convert position to grid indices
- *      - Accumulate concentration in cell
+ *      - Convert (x, y, z) to grid indices (ix, iy, iz)
+ *      - Accumulate concentration in grid[ix][iy][iz]
+ *      - Increment particle count
  *   3. Write non-zero cells to CSV
  *
  * @performance O(N) where N = active particles

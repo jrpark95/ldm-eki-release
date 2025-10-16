@@ -1,4 +1,14 @@
-// ldm_eki_writer.cu - Implementation of EKI IPC Writer
+////////////////////////////////////////////////////////////////////////////////
+/// @file    ldm_eki_writer.cu
+/// @brief   Implementation of IPC writer for LDM→Python communication
+/// @details Implements POSIX shared memory operations for transmitting
+///          observation data from C++/CUDA forward model to Python EKI
+///          inversion process.
+///
+/// @author  Juryong Park
+/// @date    2025
+////////////////////////////////////////////////////////////////////////////////
+
 #include "ldm_eki_writer.cuh"
 #include "../core/ldm.cuh"  // For EKIConfig definition
 #include "../debug/memory_doctor.cuh"
@@ -6,9 +16,9 @@
 
 namespace LDM_EKI_IPC {
 
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 // Constructor / Destructor
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 
 EKIWriter::EKIWriter()
     : config_fd(-1), data_fd(-1), config_map(nullptr),
@@ -19,10 +29,33 @@ EKIWriter::~EKIWriter() {
     cleanup();
 }
 
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 // Initialization
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 
+////////////////////////////////////////////////////////////////////////////////
+/// @brief Initialize shared memory segments with full configuration
+///
+/// @details
+/// Creates two shared memory segments:
+/// 1. Configuration segment (128 bytes) - Contains all EKI parameters
+/// 2. Data segment (variable size) - Contains observation data
+///
+/// The configuration segment includes:
+/// - Basic dimensions (ensemble size, receptors, timesteps)
+/// - Algorithm parameters (iteration, lambda, noise, etc.)
+/// - Option flags (adaptive, localized, regularization, etc.)
+/// - GPU settings
+/// - Memory Doctor mode
+///
+/// @param[in] eki_config     Complete EKI configuration structure
+/// @param[in] num_timesteps  Number of simulation timesteps
+///
+/// @return true if initialization successful, false on error
+///
+/// @post /dev/shm/ldm_eki_config created and written
+/// @post /dev/shm/ldm_eki_data created and header initialized
+////////////////////////////////////////////////////////////////////////////////
 bool EKIWriter::initialize(const ::EKIConfig& eki_config, int num_timesteps) {
     if (initialized) {
         std::cerr << "EKIWriter already initialized" << std::endl;
@@ -150,10 +183,29 @@ bool EKIWriter::initialize(const ::EKIConfig& eki_config, int num_timesteps) {
     return true;
 }
 
-// ============================================================================
-// Write Observations
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
+// Write Initial Observations
+////////////////////////////////////////////////////////////////////////////////
 
+////////////////////////////////////////////////////////////////////////////////
+/// @brief Write initial observation matrix to shared memory
+///
+/// @details
+/// Writes the "truth" simulation observations to the data segment.
+/// Uses a simple handshake protocol:
+/// - status=0: Writing in progress
+/// - memcpy data
+/// - status=1: Ready for Python to read
+///
+/// @param[in] observations  Row-major observation matrix [receptors × timesteps]
+/// @param[in] rows          Number of receptors
+/// @param[in] cols          Number of timesteps
+///
+/// @return true if write successful, false on error
+///
+/// @pre initialize() must have been called
+/// @post Data written to /dev/shm/ldm_eki_data with status=1
+////////////////////////////////////////////////////////////////////////////////
 bool EKIWriter::writeObservations(const float* observations, int rows, int cols) {
     if (!initialized) {
         std::cerr << "EKIWriter not initialized" << std::endl;
@@ -194,10 +246,25 @@ bool EKIWriter::writeObservations(const float* observations, int rows, int cols)
     return true;
 }
 
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 // Ensemble Observations
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 
+////////////////////////////////////////////////////////////////////////////////
+/// @brief Initialize ensemble observation shared memory segments
+///
+/// @details
+/// Creates the configuration segment for ensemble observations.
+/// The data segment will be created/truncated on each write.
+///
+/// @param[in] ensemble_size   Number of ensemble members
+/// @param[in] num_receptors   Number of receptors
+/// @param[in] num_timesteps   Number of timesteps
+///
+/// @return true if successful, false on error
+///
+/// @post /dev/shm/ldm_eki_ensemble_obs_config created and written
+////////////////////////////////////////////////////////////////////////////////
 bool EKIWriter::initializeEnsembleObservations(int ensemble_size, int num_receptors, int num_timesteps) {
     if (!initialized) {
         std::cerr << "EKIWriter not initialized. Call initialize() first." << std::endl;
@@ -245,6 +312,30 @@ bool EKIWriter::initializeEnsembleObservations(int ensemble_size, int num_recept
     return true;
 }
 
+////////////////////////////////////////////////////////////////////////////////
+/// @brief Write ensemble observation tensor to shared memory
+///
+/// @details
+/// Writes all ensemble member observations for the current iteration.
+/// Creates/truncates the data segment each time to ensure fresh data.
+///
+/// Data Layout:
+/// - [ensemble_0][receptor_0][time_0], [ensemble_0][receptor_0][time_1], ...
+/// - [ensemble_0][receptor_1][time_0], [ensemble_0][receptor_1][time_1], ...
+/// - ...
+/// - [ensemble_N][receptor_R][time_T]
+///
+/// @param[in] observations    Flattened 3D tensor (row-major)
+/// @param[in] ensemble_size   Number of ensemble members
+/// @param[in] num_receptors   Number of receptors
+/// @param[in] num_timesteps   Number of timesteps
+/// @param[in] iteration       Current EKI iteration (for logging)
+///
+/// @return true if write successful, false on error
+///
+/// @pre initializeEnsembleObservations() must have been called
+/// @post /dev/shm/ldm_eki_ensemble_obs_data created/truncated and written
+////////////////////////////////////////////////////////////////////////////////
 bool EKIWriter::writeEnsembleObservations(const float* observations, int ensemble_size,
                                          int num_receptors, int num_timesteps, int iteration) {
     if (!initialized) {
@@ -312,10 +403,19 @@ bool EKIWriter::writeEnsembleObservations(const float* observations, int ensembl
     return true;
 }
 
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 // Configuration Retrieval
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 
+////////////////////////////////////////////////////////////////////////////////
+/// @brief Get current basic configuration dimensions
+///
+/// @param[out] ensemble_size   Number of ensemble members
+/// @param[out] num_receptors   Number of receptors
+/// @param[out] num_timesteps   Number of timesteps
+///
+/// @return true if config available, false if not initialized
+////////////////////////////////////////////////////////////////////////////////
 bool EKIWriter::getConfig(int& ensemble_size, int& num_receptors, int& num_timesteps) {
     if (!initialized) {
         return false;
@@ -328,10 +428,20 @@ bool EKIWriter::getConfig(int& ensemble_size, int& num_receptors, int& num_times
     return true;
 }
 
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 // Cleanup
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 
+////////////////////////////////////////////////////////////////////////////////
+/// @brief Cleanup resources and unmap memory
+///
+/// @details
+/// Unmaps memory and closes file descriptors, but does NOT unlink the
+/// shared memory files from /dev/shm. Use unlinkSharedMemory() for that.
+///
+/// @post All memory unmapped and file descriptors closed
+/// @post initialized flag set to false
+////////////////////////////////////////////////////////////////////////////////
 void EKIWriter::cleanup() {
     if (data_map) {
         munmap(data_map, data_size);
@@ -352,6 +462,19 @@ void EKIWriter::cleanup() {
     initialized = false;
 }
 
+////////////////////////////////////////////////////////////////////////////////
+/// @brief Unlink shared memory segments from filesystem
+///
+/// @details
+/// Removes shared memory files from /dev/shm. Should be called at program
+/// exit after all readers (Python) have finished.
+///
+/// Note: Does NOT unlink ensemble observation files because Python needs
+/// them after C++ exits.
+///
+/// @post /dev/shm/ldm_eki_config removed
+/// @post /dev/shm/ldm_eki_data removed
+////////////////////////////////////////////////////////////////////////////////
 void EKIWriter::unlinkSharedMemory() {
     shm_unlink(SHM_CONFIG_NAME);
     shm_unlink(SHM_DATA_NAME);

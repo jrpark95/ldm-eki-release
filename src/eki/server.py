@@ -1,36 +1,52 @@
+"""
+TCP Test Server (Legacy)
+
+This is a simple TCP echo server used for testing socket-based communication.
+This module is deprecated and kept only for backward compatibility testing.
+Production systems use POSIX shared memory IPC instead.
+
+Author:
+    Siho Jang, 2025
+
+Notes:
+    - DO NOT use for production IPC
+    - Replaced by POSIX shared memory (see eki_ipc_reader.py, eki_ipc_writer.py)
+    - Kept only for testing legacy TCP socket interface
+"""
+
 import socket
 import time
 
-# 서버 설정
-host = '127.0.0.1'  # 로컬호스트
-port = 65432        # 사용할 포트 번호
+# Server configuration
+host = '127.0.0.1'  # Localhost
+port = 65432        # Port number
 
-# 소켓 생성 및 바인딩
+# Create socket and bind
 server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server_socket.bind((host, port))
 server_socket.listen(1)
 
-print(f"서버가 {host}:{port}에서 대기 중입니다...")
+print(f"Server waiting at {host}:{port}...")
 
-# 클라이언트 연결 대기
+# Wait for client connection
 conn, addr = server_socket.accept()
-print(f"{addr}에서 연결되었습니다.")
+print(f"Connected from {addr}.")
 
-# 데이터 수신 및 송신
+# Receive and send data
 with conn:
     while True:
-        # 데이터 수신
-        data = conn.recv(1024)  # 데이터 수신
+        # Receive data
+        data = conn.recv(1024)  # Receive data
         if not data:
             break
         number = int(data.decode())
-        print(f"받은 숫자: {number}")
+        print(f"Received number: {number}")
 
-        # 0.3초 대기 후 숫자 증가
+        # Wait 0.3 seconds and increment number
         time.sleep(0.3)
         number += 1
-        print(f"{number}를 클라이언트로 전송합니다.")
-        conn.sendall(str(number).encode())  # 응답 데이터 전송
+        print(f"Sending {number} to client.")
+        conn.sendall(str(number).encode())  # Send response data
 
-# 소켓 종료
+# Close socket
 server_socket.close()

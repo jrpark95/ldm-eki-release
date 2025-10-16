@@ -1,13 +1,82 @@
-/**
+/******************************************************************************
  * @file ldm_mdata_loading.cu
- * @brief Meteorological data loading implementation
- */
+ * @brief FLEXPART-format GFS meteorological data loading implementation
+ *
+ * @details This file implements functions to load pre-processed GFS
+ *          (Global Forecast System) meteorological data in FLEXPART-compatible
+ *          binary format. The data is read from binary files and transferred
+ *          to GPU memory for particle transport calculations.
+ *
+ *          **File Format:**
+ *          - Binary data with Fortran-style record markers (int32)
+ *          - 2D surface fields (FlexUnis): HMIX, TROP, USTR, WSTR, OBKL, etc.
+ *          - 3D pressure-level fields (FlexPres): RHO, TT, UU, VV, WW, etc.
+ *          - Separate height data files (hgt_*.txt)
+ *
+ *          **Data Processing:**
+ *          - Vertical density gradient (DRHO) calculated from RHO and height
+ *          - Integer fields (CLDH, CLDS) converted to float
+ *          - Data copied to GPU device memory for kernel access
+ *
+ *          **Memory Management:**
+ *          - Three timestep buffers: device_meteorological_flex_*0/1/2
+ *          - Rolling buffer update during simulation progression
+ *          - Height data cached separately in d_flex_hgt
+ *
+ * @note Input data path hardcoded: "../gfsdata/0p5/"
+ * @note Data dimensions from LDM member variables: dimX_GFS, dimY_GFS, dimZ_GFS
+ *
+ * @author Juryong Park
+ * @date 2025
+ *****************************************************************************/
 
 #include "../../core/ldm.cuh"
 #include "ldm_mdata_loading.cuh"
 #include "colors.h"
 
-
+/******************************************************************************
+ * @brief Initialize first three timesteps of FLEXPART-format GFS data
+ *
+ * @details Loads meteorological data files 2.txt, 3.txt, and 4.txt into GPU
+ *          memory to bootstrap the simulation. This provides the initial
+ *          meteorological state plus two future timesteps for temporal
+ *          interpolation.
+ *
+ *          **Loading Sequence:**
+ *          1. Allocate host memory for FlexPres and FlexUnis structures
+ *          2. Read 2.txt → device_meteorological_flex_*0
+ *          3. Read 3.txt → device_meteorological_flex_*1
+ *          4. Read 4.txt → device_meteorological_flex_*2
+ *          5. Calculate DRHO (vertical density gradient) for each timestep
+ *          6. Transfer all data to GPU device memory
+ *
+ *          **Fields Loaded (per timestep):**
+ *          - Surface (2D): HMIX, TROP, USTR, WSTR, OBKL, LPREC, CPREC, TCC, CLDH, VDEP
+ *          - 3D Pressure: RHO, TT, UU, VV, WW, CLDS
+ *          - Derived: DRHO (computed from RHO and height)
+ *
+ * @param None (uses LDM member variables)
+ *
+ * @return void
+ *
+ * @note Hardcoded file paths: "../gfsdata/0p5/2.txt", "3.txt", "4.txt"
+ * @note Memory allocated: 3 * (pres_data_size + unis_data_size) on GPU
+ * @note DRHO calculation uses centered finite differences except at boundaries
+ *
+ * @warning File open failures print error and return early
+ * @warning CUDA memory allocation failures print error and return early
+ * @warning Assumes height data already loaded in flex_hgt member variable
+ *
+ * @output Terminal messages:
+ *   - [DEBUG] Memory allocation sizes (ifdef DEBUG)
+ *   - [DEBUG] File open confirmations
+ *   - [VERIFY] Sample HMIX values for verification
+ *   - [DRHO_DEBUG] Height differences and DRHO sample values
+ *   - [ERROR] File open or CUDA failures
+ *
+ * @author Juryong Park
+ * @date 2025
+ *****************************************************************************/
 void LDM::initializeFlexGFSData(){
 
 #ifdef DEBUG
@@ -1094,6 +1163,54 @@ void LDM::initializeFlexGFSData(){
 
 }
 
+/******************************************************************************
+ * @brief Load next meteorological data timestep with rolling buffer update
+ *
+ * @details This function is called during simulation time advancement to load
+ *          the next meteorological data file. It implements a rolling three-
+ *          buffer scheme where the oldest data is discarded and the newest
+ *          data is loaded into the freed slot.
+ *
+ *          **Rolling Buffer Strategy:**
+ *          - Buffer 0 (oldest) ← copy Buffer 1 (middle)
+ *          - Buffer 1 (middle) ← load new file (newest)
+ *          - Buffer 2 unchanged (used for next call)
+ *          - Next call: Buffer 0 ← Buffer 1, Buffer 1 ← new, Buffer 2 ← Buffer 2
+ *
+ *          **File Indexing:**
+ *          - gfs_idx tracks current file index (incremented each call)
+ *          - File loaded: (gfs_idx + 3).txt
+ *          - Example: 1st call loads 4.txt, 2nd call loads 5.txt, etc.
+ *
+ *          **Data Pipeline:**
+ *          1. Increment gfs_idx
+ *          2. Copy device_flex_*1 → device_flex_*0 (GPU-to-GPU)
+ *          3. Read new file (gfs_idx+3) from disk to host memory
+ *          4. Calculate DRHO from RHO and height data
+ *          5. Copy host data → device_flex_*1 (host-to-GPU)
+ *          6. Load corresponding height file hgt_(gfs_idx+2).txt
+ *          7. Update d_flex_hgt with new height data
+ *
+ * @param None (uses LDM member: gfs_idx, automatically incremented)
+ *
+ * @return void
+ *
+ * @note Called automatically by time advancement logic
+ * @note Height file index = (gfs_idx + 2), meteorological file = (gfs_idx + 3)
+ * @note Reuses same host memory allocation across calls
+ *
+ * @warning File open failures print error and return early
+ * @warning CUDA memory copy failures silently ignored (should check!)
+ * @warning d_flex_hgt must be pre-allocated or nullptr (auto-allocates once)
+ *
+ * @output Terminal messages:
+ *   - [DEBUG] Filename being loaded
+ *   - [ERROR] File open failures
+ *   - CUDA error messages for memory operations
+ *
+ * @author Juryong Park
+ * @date 2025
+ *****************************************************************************/
 void LDM::loadFlexGFSData(){
 
     gfs_idx ++;
@@ -1393,6 +1510,55 @@ void LDM::loadFlexGFSData(){
 
 }
 
+/******************************************************************************
+ * @brief Load initial vertical height grid data for FLEXPART format
+ *
+ * @details Reads the vertical coordinate (height above ground) for each
+ *          pressure level from a binary file. This data is essential for:
+ *          - Vertical density gradient (DRHO) calculations
+ *          - Particle vertical position interpolation
+ *          - Proper vertical advection in terrain-following coordinates
+ *
+ *          **Height Data Characteristics:**
+ *          - Units: meters above ground level (AGL)
+ *          - Dimensions: dimZ_GFS vertical levels
+ *          - Monotonically increasing from surface to top of atmosphere
+ *          - Typically ranges from ~10m (surface) to ~20,000m (stratosphere)
+ *
+ *          **File Format:**
+ *          - Binary with Fortran record markers
+ *          - File: "../gfsdata/0p5/hgt_2.txt"
+ *          - dimZ_GFS float values (typically 30 levels for GFS 0.5°)
+ *
+ *          **Memory Allocation:**
+ *          - Host memory: flex_hgt vector (LDM member variable)
+ *          - GPU memory: d_flex_hgt (allocated if nullptr, then populated)
+ *          - Size: dimZ_GFS * sizeof(float)
+ *
+ * @param None (uses LDM members: flex_hgt, d_flex_hgt, dimZ_GFS)
+ *
+ * @return void
+ *
+ * @note Called once during initialization before initializeFlexGFSData()
+ * @note GPU memory d_flex_hgt persists for entire simulation
+ * @note NaN detection included for data validation
+ *
+ * @warning File must exist or function returns early with error
+ * @warning CUDA allocation failures print error and return
+ * @warning NaN values in height data trigger warning (data corruption)
+ *
+ * @output Terminal messages:
+ *   - [DEBUG] Initialization start message
+ *   - [DEBUG] Vector resize confirmation
+ *   - [DEBUG] File open confirmation
+ *   - [HGT_NAN] Warning if NaN detected in data
+ *   - [DEBUG] Read completion with element count
+ *   - [DEBUG] GPU allocation and copy confirmations
+ *   - [ERROR] File open or CUDA failures
+ *
+ * @author Juryong Park
+ * @date 2025
+ *****************************************************************************/
 void LDM::loadFlexHeightData(){ 
 
     std::cout << "[DEBUG] Starting read_meteorological_flex_hgt function..." << std::endl;

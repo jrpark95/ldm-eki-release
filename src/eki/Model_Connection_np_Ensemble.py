@@ -1,3 +1,38 @@
+"""
+Model Connection for Ensemble EKI (NumPy-based)
+
+This module provides the interface between the Python EKI optimizer and the
+LDM-EKI C++/CUDA forward model via POSIX shared memory IPC.
+
+Main components:
+    - Configuration loading from shared memory (replaces YAML files)
+    - Initial observation reception from LDM
+    - Ensemble state transmission to LDM
+    - Ensemble observation reception from LDM
+    - Forward model wrapper for state_to_ob() calls
+
+Communication flow:
+    1. LDM writes initial observations → Python reads via shared memory
+    2. Python generates prior ensemble
+    3. For each EKI iteration:
+       a. Python writes ensemble states → LDM reads via shared memory
+       b. LDM runs ensemble simulations
+       c. LDM writes ensemble observations → Python reads via shared memory
+       d. Python updates ensemble via Kalman gain
+
+Array conventions:
+    - Python: Column-major (num_states, num_ensemble)
+    - C++: Row-major [ensemble][state]
+    - Shared memory: Always row-major (flatten with order='C')
+
+Author:
+    Siho Jang, 2025
+
+References:
+    - POSIX shared memory: shm_open(3), mmap(2)
+    - IPC data layout: See eki_ipc_reader.py and eki_ipc_writer.py
+"""
+
 import numpy as np
 # import GaussianPuffClass_Rev_20240514 as Gpuff
 # import GaussianPuffClass_Rev_20240514_GPU_Ensemble as Gpuff_Ensemble
@@ -31,10 +66,66 @@ def load_config_from_shared_memory():
     Load configuration from shared memory and convert to input_config/input_data dictionaries.
 
     This function replaces YAML file parsing by reading all parameters from shared memory
-    and constructing the same dictionary structures expected by the rest of the code.
+    (written by LDM C++) and constructing the same dictionary structures expected by the
+    Python EKI code. It serves as the IPC bridge for configuration data.
 
-    Returns:
-        tuple: (input_config, input_data) dictionaries
+    Returns
+    -------
+    tuple of dict
+        (input_config, input_data) dictionaries matching YAML format
+
+    Notes
+    -----
+    **Shared Memory Structure:**
+
+    The configuration is stored in /dev/shm/ldm_eki_config (128 bytes):
+
+    Byte Layout (little-endian):
+    - Bytes 0-11 (12): Basic config (3 × int32)
+        - ensemble_size, num_receptors, num_timesteps
+    - Bytes 12-55 (44): Algorithm parameters
+        - iteration (int32)
+        - renkf_lambda, noise_level, time_days, time_interval,
+          inverse_time_interval (5 × float32)
+        - receptor_error, receptor_mda, prior_constant (3 × float32)
+        - num_source, num_gpu (2 × int32)
+    - Bytes 56-127 (72): Option strings (9 × char[8])
+        - perturb_option, adaptive_eki, localized_eki, regularization,
+          gpu_forward, gpu_inverse, source_location, time_unit, memory_doctor
+
+    **Dictionary Construction:**
+
+    input_config contains EKI algorithm parameters:
+    - sample_ctrl: Ensemble size
+    - iteration: Number of EKI iterations
+    - Optimizer_order: List of algorithms to run ['EKI']
+    - Adaptive_EKI, Localized_EKI, Regularization: On/Off flags
+    - GPU_ForwardPhysicsModel, GPU_InverseModel: GPU usage flags
+    - nGPU: Number of GPU devices
+
+    input_data contains simulation parameters:
+    - time: Simulation duration in days
+    - nreceptor: Number of observation receptors
+    - nsource: Number of emission sources
+    - Source_1: True emission time series (for reference simulation)
+    - Prior_Source_1: Prior emission guess (for inversion)
+    - receptor_position: List of [lat, lon, alt] coordinates
+
+    **Example:**
+    >>> input_config, input_data = load_config_from_shared_memory()
+    >>> print(f"Ensemble size: {input_config['sample_ctrl']}")
+    Ensemble size: 100
+    >>> print(f"Receptors: {input_data['nreceptor']}")
+    Receptors: 3
+
+    Raises
+    ------
+    OSError
+        If shared memory file cannot be read
+
+    Author
+    ------
+    Siho Jang, 2025
     """
     print(f"{Fore.MAGENTA}[ENSEMBLE]{Style.RESET_ALL} Loading configuration from shared memory...")
 
@@ -460,9 +551,78 @@ def receive_gamma_dose_matrix_ens(Nens, Nrec):
 
     return h_gamma_dose_3d
 
-# Gaussian_plume model
+# Forward model interface
 class Model(object):
+    """
+    Forward model interface for LDM-EKI ensemble simulation.
+
+    This class manages the interaction between the Python EKI optimizer and the
+    LDM C++/CUDA forward model via POSIX shared memory. It handles:
+        - Configuration parameter management
+        - Initial observation loading
+        - Prior ensemble generation
+        - Ensemble state transmission to LDM
+        - Ensemble observation reception from LDM
+
+    Attributes
+    ----------
+    name : str
+        Model identifier ('gaussian_puff_model')
+    nGPU : int
+        Number of GPU devices available
+    sample : int
+        Number of ensemble members
+    nsource : int
+        Number of emission sources
+    nreceptor : int
+        Number of receptor locations
+    nstate : int
+        Number of state variables (e.g., 24 for 24-hour emission time series)
+    obs : ndarray of shape (nreceptor * num_timesteps,)
+        Flattened observation vector from LDM initial simulation
+    obs_err : ndarray
+        Diagonal observation error covariance matrix
+    state_init : ndarray of shape (nstate,)
+        Prior mean state vector
+    state_std : ndarray of shape (nstate,)
+        Prior standard deviation vector
+
+    Notes
+    -----
+    Unlike legacy implementations using Gaussian puff models, this version
+    interfaces directly with the LDM Lagrangian particle dispersion model
+    running on GPU via shared memory IPC.
+
+    Examples
+    --------
+    >>> model = Model(input_config, input_data)
+    >>> prior_ensemble = model.make_ensemble()  # Generate prior
+    >>> observations = model.state_to_ob(ensemble_states)  # Forward model
+    """
     def __init__(self, input_config, input_data):
+        """
+        Initialize forward model interface.
+
+        Parameters
+        ----------
+        input_config : dict
+            Configuration dictionary containing:
+            - sample: Ensemble size
+            - nGPU: Number of GPU devices
+            - (other EKI algorithm parameters)
+        input_data : dict
+            Input data dictionary containing:
+            - nsource: Number of sources
+            - nreceptor: Number of receptors
+            - Source_1, Prior_Source_1: True and prior source definitions
+            - receptor positions, error levels, etc.
+
+        Notes
+        -----
+        Constructor waits for initial observations from LDM to be available
+        in shared memory before completing initialization. This ensures the
+        observation vector (self.obs) is populated before EKI loop starts.
+        """
         self.name = 'gaussian_puff_model'
         self.nGPU = input_config['nGPU']
         self.input_data = input_data
@@ -642,9 +802,33 @@ class Model(object):
         self.bounds = np.array([self.lowerbounds_list, self.upperbounds_list]).T
 
     def __str__(self):
+        """Return model name string."""
         return self.name
-    
+
     def make_ensemble(self):
+        """
+        Generate prior ensemble from Gaussian distribution.
+
+        Returns
+        -------
+        state : ndarray of shape (nstate, sample)
+            Prior ensemble matrix where each column is an ensemble member.
+            Shape: (num_states, num_ensemble), e.g., (24, 100) for 24 timesteps
+            and 100 ensemble members.
+
+        Notes
+        -----
+        - Uses absolute value to prevent negative emission rates
+        - Random seed should be set externally for reproducibility
+        - State variables are sampled independently (diagonal prior covariance)
+        - Saved to logs2/dev/prior_ensemble.npy for debugging
+
+        Examples
+        --------
+        >>> prior = model.make_ensemble()
+        >>> prior.shape
+        (24, 100)  # 24 timesteps, 100 ensemble members
+        """
         state = np.empty([self.nstate, self.sample])
         for i in range(self.nstate):
             # Use abs() to prevent negative initial values (same as reference)
@@ -670,8 +854,97 @@ class Model(object):
         return state
     
 
-        # No GPU stream
     def state_to_ob(self, state):
+        """
+        Forward model: Map ensemble states to ensemble observations via LDM.
+
+        This is the core forward model operator that:
+        1. Sends ensemble states to LDM via shared memory
+        2. Waits for LDM to complete ensemble simulations
+        3. Receives ensemble observations from LDM via shared memory
+        4. Reshapes observations to match EKI format
+
+        Parameters
+        ----------
+        state : ndarray of shape (nstate, sample)
+            Ensemble state matrix (column-major format).
+            Each column is one ensemble member.
+            Shape: (num_states, num_ensemble), e.g., (24, 100)
+
+        Returns
+        -------
+        model_obs : ndarray of shape (nreceptor * num_timesteps, sample)
+            Ensemble observation matrix where each column contains observations
+            for one ensemble member. Format: [R0_T0...T23, R1_T0...T23, ...]
+
+        Notes
+        -----
+        **IPC Communication Flow:**
+        1. Python writes config: (num_states, num_ensemble, iteration_id)
+        2. Python writes states: Row-major flatten of (nstate, sample)
+        3. LDM detects new data via iteration_id
+        4. LDM runs ensemble simulations (N members in parallel)
+        5. LDM writes observations: [ens][timestep][receptor]
+        6. Python reads observations and transposes to match EKI format
+
+        **Array Layout Conversions:**
+
+        The IPC transfer requires careful attention to memory layouts due to
+        NumPy (column-major by default) vs C++ (row-major) differences.
+
+        *State Transmission (Python → C++):*
+        - Python format: (num_states, num_ensemble) = (24, 100)
+          Column-major: state[timestep, ensemble]
+        - Flatten with order='C': Row-major sequential layout
+        - C++ reads as: states[ensemble][timestep] via row-major indexing
+
+        *Observation Reception (C++ → Python):*
+        - C++ format: [ensemble][timestep][receptor] = [100][24][3]
+          Memory layout: Ens0_T0_R0, Ens0_T0_R1, Ens0_T0_R2, Ens0_T1_R0, ...
+        - Python reads as: (ensemble, timestep, receptor) with order='C'
+        - Transpose to: (ensemble, receptor, timestep)
+        - Flatten each ensemble: receptor-major [R0_T0...T23, R1_T0...T23, R2_T0...T23]
+        - Final Python format: (nobs, num_ensemble) = (72, 100)
+
+        **Memory Layout Example:**
+
+        State transmission (24 timesteps, 3 ensembles):
+            Python: states = [[e1_t1, e2_t1, e3_t1],    # shape (24, 3)
+                              [e1_t2, e2_t2, e3_t2],
+                              ...
+                              [e1_t24, e2_t24, e3_t24]]
+
+            Flatten('C'): [e1_t1, e2_t1, e3_t1, e1_t2, e2_t2, e3_t2, ...]
+                          (row-major, state-major within ensemble)
+
+            C++ reads: states[0][0]=e1_t1, states[0][1]=e1_t2, ...
+                       states[1][0]=e2_t1, states[1][1]=e2_t2, ...
+
+        Observation reception (3 receptors, 24 timesteps, 2 ensembles):
+            C++ writes: [Ens0: T0_R0, T0_R1, T0_R2, T1_R0, T1_R1, T1_R2, ...]
+                        [Ens1: T0_R0, T0_R1, T0_R2, T1_R0, T1_R1, T1_R2, ...]
+
+            Python reads: obs[0, 0, 0]=Ens0_T0_R0, obs[0, 0, 1]=Ens0_T0_R1, ...
+                          shape (2, 24, 3)
+
+            Transpose: obs[:, :, :] → obs[:, receptor, timestep]
+                       shape (2, 3, 24)
+
+            Flatten each ensemble: [R0_T0, R0_T1, ..., R0_T23,
+                                   R1_T0, R1_T1, ..., R1_T23,
+                                   R2_T0, R2_T1, ..., R2_T23]
+
+            Final: shape (72, 2) - each column is one ensemble's observations
+
+        **Performance:**
+        - Typical wait time: 5-30 seconds for 100 ensemble members
+        - Timeout after 120 seconds with error
+
+        Examples
+        --------
+        >>> state = model.make_ensemble()  # (24, 100)
+        >>> observations = model.state_to_ob(state)  # (72, 100) for 3 receptors
+        """
 
         model_obs_list = []
         tmp_states = state.copy()
@@ -807,8 +1080,16 @@ class Model(object):
 
     def read_initial_observations(self):
         """
-        [DEPRECATED] Initial observations are now read in __init__ to match reference code.
-        This function is kept for backward compatibility but should not be used.
+        Read initial observations from LDM (DEPRECATED).
+
+        Notes
+        -----
+        This function is deprecated. Initial observations are now read in __init__()
+        to match reference code behavior. Kept for backward compatibility only.
+
+        The constructor (__init__) now waits for initial observations from LDM
+        before completing initialization, ensuring self.obs is populated before
+        the EKI loop starts.
         """
         print("[Model] Reading initial observations from LDM...")
 
@@ -845,9 +1126,57 @@ class Model(object):
         self.obs_MDA = np.diag((np.floor(self.obs * 0) + np.ones([len(self.obs)])*self.nreceptor_MDA))
 
     def get_ob(self, time):
+        """
+        Get observation vector and observation error covariance.
+
+        Parameters
+        ----------
+        time : int
+            Time index (currently unused in EKI, kept for interface compatibility)
+
+        Returns
+        -------
+        obs : ndarray of shape (nreceptor * num_timesteps,)
+            Flattened observation vector from initial LDM simulation
+        obs_err : ndarray of shape (nreceptor * num_timesteps, nreceptor * num_timesteps)
+            Diagonal observation error covariance matrix
+
+        Notes
+        -----
+        Observation error is computed as:
+            obs_err[i,i] = (obs_rel_std * obs[i] + obs_abs_std)^2
+
+        Where:
+            - obs_rel_std = nreceptor_err (relative error percentage)
+            - obs_abs_std = nreceptor_MDA (absolute error floor)
+
+        This error model combines relative and absolute uncertainties to avoid
+        zero variance when observations are near zero.
+        """
         self.obs_err = (self.obs * self.obs_err + self.obs_MDA)**2   # [obs_rel_std(rate) * true_obs + obs_abs_std]**2
         return self.obs, self.obs_err
-    
+
     def predict(self, state, time):
+        """
+        Predict next state (identity forecast model).
+
+        Parameters
+        ----------
+        state : ndarray of shape (nstate, sample)
+            Current ensemble state
+        time : int
+            Time index (unused)
+
+        Returns
+        -------
+        state : ndarray of shape (nstate, sample)
+            Predicted state (zeros for static inversion)
+
+        Notes
+        -----
+        For static source term estimation, the forecast model is identity
+        (no temporal evolution). This method returns zeros and is typically
+        not used in the EKI loop.
+        """
         state = np.zeros([self.nstate, self.sample])
         return state

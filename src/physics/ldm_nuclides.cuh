@@ -1,5 +1,6 @@
 #pragma once
 // ldm_nuclides.cuh - Nuclide Configuration and Decay Management
+// Author: Juryong Park, 2025
 #ifndef LDM_NUCLIDES_CUH
 #define LDM_NUCLIDES_CUH
 
@@ -11,44 +12,150 @@
 #include <cmath>
 #include <cuda_runtime.h>
 
-/// Maximum number of nuclides supported
+/**
+ * @file ldm_nuclides.cuh
+ * @brief Nuclide configuration management for radioactive decay simulations
+ * @author Juryong Park
+ * @date 2025
+ *
+ * @details This module manages nuclide properties, decay constants, and
+ *          initial conditions for radioactive decay simulations. It provides
+ *          a singleton interface for loading nuclide configurations from
+ *          CSV files and uploading decay constants to GPU memory.
+ *
+ * ## Nuclide Properties
+ *
+ * Each nuclide is characterized by:
+ * - **Name**: Isotope identifier (e.g., "Cs-137", "I-131")
+ * - **Half-life**: Time for 50% decay (hours)
+ * - **Decay constant**: λ = ln(2) / t½ (s⁻¹)
+ * - **Initial ratio**: Normalized initial concentration (Σ ratios = 1.0)
+ *
+ * ## Decay Constant Calculation
+ *
+ * The decay constant λ relates to half-life t½ by:
+ * @equation
+ *   λ = ln(2) / t½
+ *
+ * Activity decreases exponentially:
+ * @equation
+ *   A(t) = A₀ × exp(-λt)
+ *
+ * ## File Format
+ *
+ * CSV format: name,decay_constant,initial_ratio
+ * @code
+ *   # Comment lines start with #
+ *   Cs-137, 7.309e-10, 1.0
+ *   I-131, 9.978e-07, 0.5
+ * @endcode
+ *
+ * @note For complex decay chains (multiple nuclides), use CRAM system instead
+ * @see ldm_cram2.cuh for multi-nuclide decay chains
+ * @see input/nuclides.conf for configuration file format
+ */
+
+/// Maximum number of nuclides supported by constant memory
+/// @note Limited by __constant__ memory size (64 KB total)
+/// @note For larger chains, use global memory or CRAM system
 #define MAX_NUCLIDES 1
 
-/// Decay constants array in constant memory
+/// Decay constants array in device constant memory [s⁻¹]
+/// @note Faster access than global memory for small arrays
+/// @note May not be visible in non-RDC compilation (fallback to global memory)
 __constant__ float d_decay_constants[MAX_NUCLIDES];
 
 /**
  * @struct NuclideInfo
- * @brief Information structure for a single nuclide
+ * @brief Physical and chemical properties of a radioactive nuclide
  *
- * @details Stores physical properties and initial conditions for
- *          radioactive nuclides in the simulation.
+ * @details Stores all information needed to simulate radioactive decay
+ *          and transport of a single nuclide species. This structure
+ *          is used for simple single-nuclide simulations.
+ *
+ * ## Physical Interpretation
+ *
+ * - **Half-life**: Time for activity to drop to 50% of initial value
+ * - **Decay constant**: Exponential decay rate (λ = ln(2)/t½)
+ * - **Initial ratio**: Fraction of total activity from this nuclide
+ *
+ * ## Example Values (Common Isotopes)
+ *
+ * | Nuclide | Half-life      | Decay constant λ (s⁻¹) |
+ * |---------|----------------|-------------------------|
+ * | I-131   | 8.02 days      | 9.978e-7                |
+ * | Cs-137  | 30.17 years    | 7.309e-10               |
+ * | Xe-133  | 5.24 days      | 1.530e-6                |
+ * | Te-132  | 3.20 days      | 2.508e-6                |
+ *
+ * @note For multi-nuclide chains with production/decay, use CRAM system
+ * @see ldm_cram2.cuh for coupled decay chain simulations
  */
 struct NuclideInfo {
-    char name[32];            ///< Nuclide name (e.g., "Cs-137")
-    float half_life_hours;    ///< Half-life in hours
-    float decay_constant;     ///< Decay constant λ [s⁻¹]
-    float initial_ratio;      ///< Initial concentration ratio (normalized to 1.0)
+    char name[32];            ///< Isotope name (e.g., "Cs-137", "I-131")
+    float half_life_hours;    ///< Half-life in hours (calculated from λ)
+    float decay_constant;     ///< Decay constant λ [s⁻¹], primary physical parameter
+    float initial_ratio;      ///< Initial concentration fraction (normalized: Σ = 1.0)
 };
 
 /**
  * @class NuclideConfig
- * @brief Global nuclide configuration manager (singleton)
+ * @brief Global nuclide configuration manager (singleton pattern)
  *
- * @details Manages nuclide properties, decay constants, and GPU memory
- *          for radioactive decay calculations. Loads configuration from
- *          CSV files and uploads to device memory.
+ * @details Centralized management of nuclide properties and GPU memory
+ *          for radioactive decay calculations. This class provides:
  *
- * @note Singleton pattern - use getInstance() to access
- * @note Decay constants automatically calculated from half-lives
- * @note Supports both constant memory and global memory fallback
+ * ## Features
  *
- * @usage
+ * - **Singleton access**: Single global instance via getInstance()
+ * - **CSV loading**: Parse nuclide config files (name, λ, ratio)
+ * - **Automatic normalization**: Initial ratios summed to 1.0
+ * - **GPU memory management**: Upload decay constants to device
+ * - **Constant memory fallback**: Tries __constant__, falls back to global
+ *
+ * ## Design Rationale
+ *
+ * Singleton pattern ensures:
+ * - Consistent nuclide properties across all simulation modules
+ * - Single source of truth for decay constants
+ * - Automatic GPU memory lifecycle management
+ * - Global access without passing pointers
+ *
+ * ## Typical Usage
+ *
  * @code
+ *   // Initialize (called once at startup)
  *   auto* config = NuclideConfig::getInstance();
- *   config->loadFromFile("input/nuclides_config_1.txt");
- *   float lambda = config->getDecayConstant(0);
+ *   if (!config->loadFromFile("input/nuclides.conf")) {
+ *       std::cerr << "Failed to load nuclides\n";
+ *       return -1;
+ *   }
+ *
+ *   // Query properties (anywhere in code)
+ *   std::cout << "Nuclide: " << config->getNuclideName(0) << "\n";
+ *   std::cout << "Half-life: " << config->getHalfLife(0) << " hours\n";
+ *   std::cout << "Decay constant: " << config->getDecayConstant(0) << " s⁻¹\n";
+ *
+ *   // Device pointer for kernels
+ *   float* d_lambda = config->getDeviceDecayConstants();
  * @endcode
+ *
+ * ## Memory Lifecycle
+ *
+ * - **Creation**: First call to getInstance() allocates singleton
+ * - **Loading**: loadFromFile() allocates device memory
+ * - **Destruction**: ~NuclideConfig() frees device memory
+ * - **Cleanup**: Automatic at program exit
+ *
+ * @note Thread-safe for single-threaded initialization (no mutex)
+ * @note Device memory freed automatically in destructor
+ * @note Initial ratios normalized even if file values don't sum to 1.0
+ *
+ * @warning Do not create NuclideConfig directly - use getInstance()
+ * @warning Loading new file frees old device memory
+ *
+ * @see ldm_cram2.cuh for complex multi-nuclide decay chains
+ * @see input/nuclides.conf for file format
  */
 class NuclideConfig {
 private:

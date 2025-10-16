@@ -1,11 +1,51 @@
 // ldm_nuclides.cu - Nuclide Configuration Implementation
+// Author: Juryong Park, 2025
 #include "ldm_nuclides.cuh"
 #include "../colors.h"
+
+/**
+ * @file ldm_nuclides.cu
+ * @brief Implementation of nuclide configuration management
+ * @author Juryong Park
+ * @date 2025
+ *
+ * @details This file implements the NuclideConfig singleton class for
+ *          managing radioactive nuclide properties and GPU memory.
+ *
+ * ## Key Functions
+ *
+ * - **loadFromFile()**: Parse CSV config and calculate derived properties
+ * - **copyToDevice()**: Upload decay constants to GPU memory
+ * - **Accessor methods**: Thread-safe property queries
+ *
+ * ## File Format Handling
+ *
+ * The CSV parser supports:
+ * - Comment lines (starting with #)
+ * - Empty lines (skipped)
+ * - Scientific notation (e.g., 7.309e-10)
+ * - Automatic normalization of initial ratios
+ *
+ * ## Decay Constant vs Half-Life
+ *
+ * The config file stores decay constants (λ), not half-lives:
+ * - **Input**: λ [s⁻¹] from file
+ * - **Calculated**: t½ = ln(2) / λ [hours]
+ *
+ * This choice optimizes for:
+ * - Direct use in exponential decay: exp(-λt)
+ * - Avoids repeated division in kernels
+ * - More numerically stable for very long/short half-lives
+ *
+ * @see ldm_nuclides.cuh for class declaration
+ * @see input/nuclides.conf for configuration file format
+ */
 
 // ============================================================================
 // Static Member Initialization
 // ============================================================================
 
+/// Global singleton instance pointer (initialized to nullptr)
 NuclideConfig* NuclideConfig::instance = nullptr;
 
 // ============================================================================

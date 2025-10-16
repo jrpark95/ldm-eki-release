@@ -1,7 +1,51 @@
-/**
+/******************************************************************************
  * @file ldm_func_simulation.cu
- * @brief Simulation module implementation
- */
+ * @brief Main simulation loop and time integration for LDM particle dispersion
+ *
+ * This module implements the core time-stepping loop for the Lagrangian
+ * Dispersion Model (LDM). It orchestrates particle advection, meteorological
+ * data updates, and observation collection across three operational modes:
+ * standard simulation, EKI single mode, and EKI ensemble mode.
+ *
+ * Key Functions:
+ * - runSimulation(): Standard forward simulation with on-demand GFS data loading
+ * - runSimulation_eki(): EKI-optimized simulation with preloaded meteorological data
+ * - runSimulation_eki_dump(): Debug variant with detailed particle state logging
+ *
+ * Time Integration Logic:
+ * - Fixed timestep (dt) forward Euler integration
+ * - Particle activation scheduled by emission time series
+ * - Meteorological data interpolated between past/future time brackets
+ * - Physics kernels called each timestep: advection, turbulence, deposition, decay
+ *
+ * Meteorological Data Management:
+ * - Standard mode: Load GFS data on-demand when simulation crosses time interval
+ * - EKI mode: Use preloaded cache (g_eki_meteo) for fast ensemble iterations
+ * - Automatic past/future pair selection based on current simulation time
+ * - Height field synchronization with pressure-level data
+ *
+ * Performance Optimizations:
+ * - Fixed-size progress bar with in-place terminal updates (ANSI escape codes)
+ * - VTK output controlled by enable_vtk_output flag (expensive I/O)
+ * - Meteorological data preloading eliminates file I/O during EKI iterations
+ * - GPU synchronization only at kernel boundaries
+ *
+ * @note All three simulation functions share similar structure but differ in:
+ *       - Meteorological data loading strategy
+ *       - Particle initialization (single vs. ensemble)
+ *       - Observation collection (single vs. per-ensemble)
+ *       - Output verbosity and logging
+ *
+ * @warning Always call preloadAllEKIMeteorologicalData() before runSimulation_eki()
+ * @warning VTK output disabled by default in EKI mode for performance
+ *
+ * @see ldm_mdata_cache.cu for meteorological data preloading
+ * @see ldm_kernels_particle.cu for particle advection kernels
+ * @see ldm_func_output.cu for observation collection
+ *
+ * @author Juryong Park
+ * @date 2025
+ *****************************************************************************/
 
 #include "../core/ldm.cuh"
 #include "ldm_func_simulation.cuh"
@@ -9,8 +53,56 @@
 #include "../colors.h"
 #include <unistd.h>  // for isatty()
 
+/******************************************************************************
+ * @brief Standard simulation loop with on-demand meteorological data loading
+ *
+ * Executes a complete forward simulation of particle dispersion using the
+ * Lagrangian approach. This is the standard operational mode used for
+ * standalone simulations (not coupled with EKI).
+ *
+ * Simulation Workflow:
+ * 1. Initialize grid mesh and deposition arrays
+ * 2. Enter main time-stepping loop (until currentTime >= time_end)
+ * 3. Update particle flags based on emission schedule (activation ratio)
+ * 4. Call particle movement kernel (advection + turbulence + physics)
+ * 5. Check if new meteorological data needs loading (GFS time interval)
+ * 6. Output VTK files and diagnostics at specified intervals
+ * 7. Accumulate wall-clock time and report performance
+ *
+ * Meteorological Data Loading:
+ * - GFS data loaded on-demand when (currentTime/time_interval) > gfs_idx
+ * - Asynchronous loading supported via std::future (optional)
+ * - Data interpolated between past/future time brackets (flex_pres0/1, flex_unis0/1)
+ *
+ * Output Control:
+ * - VTK particle snapshots written every freq_output timesteps
+ * - Binary particle files for post-processing
+ * - Concentration and nuclide ratio logging (debug builds)
+ *
+ * @pre Particles must be initialized (part vector populated)
+ * @pre GPU memory allocated (d_part allocated via allocateGPUMemory())
+ * @pre Grid configuration loaded (loadGridConfig() must succeed)
+ * @pre Initial meteorological data loaded
+ *
+ * @post Simulation completes at time_end
+ * @post Final particle positions stored in d_part (GPU) and part (host if copied)
+ * @post Output files written to output/ directory
+ *
+ * @note Grid receptor mode: Also records observations at grid points if enabled
+ * @note Progress output: Basic timestep/time reporting without fancy progress bar
+ *
+ * @warning High I/O cost: Frequent VTK output can dominate runtime
+ * @warning Memory usage: Large particle counts require careful GPU memory management
+ *
+ * @see loadFlexGFSData() for on-demand meteorological data loading
+ * @see move_part_by_wind_mpi() for particle advection kernel
+ * @see outputParticlesBinaryMPI() for VTK output generation
+ *
+ * @author Juryong Park
+ * @date 2025
+ *****************************************************************************/
 void LDM::runSimulation(){
-    
+
     cudaError_t err = cudaGetLastError();
 
     std::future<void> gfs_future;
@@ -174,6 +266,77 @@ void LDM::runSimulation(){
     
 }
 
+/******************************************************************************
+ * @brief EKI-optimized simulation loop with preloaded meteorological data
+ *
+ * Executes particle dispersion simulation optimized for Ensemble Kalman
+ * Inversion (EKI) framework. This function is called repeatedly during
+ * EKI iterations, so it prioritizes speed over output verbosity.
+ *
+ * Key Differences from Standard runSimulation():
+ * - Uses preloaded meteorological data cache (g_eki_meteo) - NO file I/O
+ * - Supports both single mode (true simulation) and ensemble mode (parallel)
+ * - Automatic past/future meteorological pair selection each timestep
+ * - VTK output controlled by enable_vtk_output flag (default: OFF)
+ * - Real-time observation collection for EKI data assimilation
+ * - Fancy progress bar with in-place updates (ANSI escape codes)
+ *
+ * Simulation Workflow:
+ * 1. Verify meteorological data preloaded (g_eki_meteo.is_initialized)
+ * 2. Display configuration summary (mode, particle count, GPU config)
+ * 3. Enter main time-stepping loop
+ * 4. Auto-select past/future meteorological data from cache (no disk I/O)
+ * 5. Copy meteorological data from cache to GPU working buffers
+ * 6. Call particle movement kernel (single or ensemble variant)
+ * 7. Collect receptor observations (every timestep, accumulated)
+ * 8. Update progress bar (fixed-scroll in-place update)
+ * 9. Optional VTK output at freq_output intervals (if enabled)
+ * 10. Report total elapsed time
+ *
+ * Meteorological Data Management:
+ * - Past index: floor(currentTime / time_interval)
+ * - Future index: past_index + 1
+ * - Automatic range checking and boundary handling
+ * - Height field (d_flex_hgt) synchronized with pressure-level data
+ * - Device-to-device memcpy from cache to working buffers
+ *
+ * Ensemble vs. Single Mode:
+ * - Single mode: Use standard kernels (update_particle_flags, move_part_by_wind_mpi)
+ * - Ensemble mode: Use ensemble kernels (*_ens variants)
+ * - Observation collection dispatched to appropriate function variant
+ *
+ * Performance Optimizations:
+ * - All meteorological data in GPU memory (preloaded)
+ * - No file I/O during simulation loop
+ * - VTK output disabled by default (expensive I/O)
+ * - Fixed-size progress bar (no log spam)
+ * - Debug logging only to file, not terminal
+ *
+ * @pre g_eki_meteo.is_initialized == true (call preloadAllEKIMeteorologicalData() first)
+ * @pre Particles initialized (via initializeParticlesEKI or initializeParticlesEKI_AllEnsembles)
+ * @pre GPU memory allocated (d_part, meteorological buffers)
+ * @pre Observation system initialized (initializeEKIObservationSystem)
+ *
+ * @post Simulation completes at time_end
+ * @post Observations collected in eki_observations or eki_ensemble_observations
+ * @post Particle state available for inspection or copying back to host
+ *
+ * @note Always called after preloadAllEKIMeteorologicalData() in EKI workflow
+ * @note Progress bar uses stderr for in-place updates (not logged to file)
+ * @note Debug NaN checks only active in DEBUG builds (first few timesteps)
+ *
+ * @warning Requires preloaded meteorological data - will error if not initialized
+ * @warning VTK output disabled by default - set enable_vtk_output = true to enable
+ * @warning Ensemble mode requires part.size() = nop * ensemble_size
+ *
+ * @see preloadAllEKIMeteorologicalData() for meteorological cache initialization
+ * @see initializeEKIObservationSystem() for observation system setup
+ * @see computeReceptorObservations() for single mode observations
+ * @see computeReceptorObservations_AllEnsembles() for ensemble mode observations
+ *
+ * @author Juryong Park
+ * @date 2025
+ *****************************************************************************/
 void LDM::runSimulation_eki(){
 
     cudaError_t err = cudaGetLastError();
@@ -555,6 +718,56 @@ void LDM::runSimulation_eki(){
     std::cout << "Elapsed data time: " << totalElapsedTime << " seconds" << std::endl;
 }
 
+/******************************************************************************
+ * @brief EKI simulation loop with extensive debug logging and particle dumps
+ *
+ * Debug variant of runSimulation_eki() that calls special "dump" kernels
+ * which produce detailed particle state information for troubleshooting.
+ * This version is identical to runSimulation_eki() except it calls
+ * move_part_by_wind_mpi_dump() and move_part_by_wind_mpi_ens_dump() kernels
+ * which have additional instrumentation.
+ *
+ * Use Cases:
+ * - Investigating numerical instabilities (NaN, Inf values)
+ * - Verifying meteorological data interpolation correctness
+ * - Debugging ensemble particle initialization issues
+ * - Analyzing particle trajectory anomalies
+ * - Validating physics model implementations
+ *
+ * Debug Features:
+ * - Dump kernels log every particle's state at each timestep
+ * - Detailed wind field interpolation diagnostics
+ * - Concentration decay tracking per nuclide
+ * - Position/velocity consistency checks
+ *
+ * Performance Impact:
+ * - Significantly slower due to extensive logging (printf from GPU)
+ * - Large log files generated (gigabytes for long simulations)
+ * - Should only be used for short test runs or specific timestep ranges
+ *
+ * @pre Same preconditions as runSimulation_eki()
+ * @pre Sufficient disk space for large log files
+ * @pre Short simulation duration (long runs will produce excessive output)
+ *
+ * @post Simulation completes with extensive debug logs
+ * @post Standard observations collected (same as runSimulation_eki)
+ * @post Particle state available for inspection
+ *
+ * @note Only for debugging - not for production EKI runs
+ * @note Log volume: ~1MB per timestep per 10k particles (estimate)
+ * @note GPU printf buffer may overflow on very large particle counts
+ *
+ * @warning Very slow - only use for debugging specific issues
+ * @warning Generates massive log files - monitor disk space
+ * @warning May cause GPU timeouts on consumer graphics cards
+ *
+ * @see runSimulation_eki() for normal EKI simulation
+ * @see move_part_by_wind_mpi_dump() for instrumented single-mode kernel
+ * @see move_part_by_wind_mpi_ens_dump() for instrumented ensemble kernel
+ *
+ * @author Juryong Park
+ * @date 2025
+ *****************************************************************************/
 void LDM::runSimulation_eki_dump(){
 
     cudaError_t err = cudaGetLastError();

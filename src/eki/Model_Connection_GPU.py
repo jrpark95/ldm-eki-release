@@ -1,10 +1,67 @@
+"""
+Model Connection with GPU Support (Legacy)
+
+This module provides GPU-accelerated Gaussian puff forward model evaluation
+for EKI. This is a legacy implementation superseded by the LDM-based approach.
+
+Main components:
+    - GPU-accelerated Gaussian puff simulation
+    - Concurrent ensemble evaluation
+    - Basic state-to-observation mapping
+
+Author:
+    Siho Jang, 2025
+
+Notes:
+    This module is deprecated for production use. The LDM-based approach in
+    Model_Connection_np_Ensemble.py provides better performance and physics
+    via Lagrangian particle dispersion on GPU.
+"""
+
 import numpy as np
 import GaussianPuffClass_Rev_20240514 as Gpuff
 import concurrent.futures
 
-# Gaussian puff model
+# Gaussian puff forward model with GPU support
 class Model(object):
+    """
+    Forward model interface for GPU-accelerated Gaussian puff simulation.
+
+    This class provides GPU-accelerated forward model evaluation using
+    concurrent GPU contexts. Legacy implementation superseded by LDM.
+
+    Attributes
+    ----------
+    name : str
+        Model identifier ('gaussian_puff_model')
+    sample : int
+        Number of ensemble members
+    nsource : int
+        Number of emission sources
+    nreceptor : int
+        Number of receptor locations
+    nstate : int
+        Number of state variables
+    obs : ndarray
+        Observation vector
+    obs_err : ndarray
+        Observation error covariance
+
+    Notes
+    -----
+    Deprecated: Use Model_Connection_np_Ensemble.py with LDM for production.
+    """
     def __init__(self, input_config, input_data):
+        """
+        Initialize GPU-accelerated forward model.
+
+        Parameters
+        ----------
+        input_config : dict
+            Configuration dictionary
+        input_data : dict
+            Input data dictionary
+        """
         self.name = 'gaussian_puff_model'
         self.input_data = input_data
         self.sample = input_config['sample']

@@ -1,7 +1,56 @@
-/**
+/******************************************************************************
  * @file ldm_func_output.cu
- * @brief Output module implementation
- */
+ * @brief Observation collection and output management for EKI data assimilation
+ *
+ * This module implements the receptor-based observation system that is central
+ * to the EKI (Ensemble Kalman Inversion) framework. It manages:
+ *
+ * Observation Collection:
+ * - Receptor locations: Virtual monitoring stations at specific lat/lon coordinates
+ * - Capture radius: Spatial tolerance for particle-receptor matching (degrees)
+ * - Time accumulation: Dose integrated over specified observation intervals
+ * - Multi-nuclide support: Gamma dose from all nuclides weighted by DCF
+ *
+ * GPU Kernels:
+ * - compute_eki_receptor_dose: Single-mode observation kernel
+ * - compute_eki_receptor_dose_ensemble: Ensemble-mode parallel observation kernel
+ * - Kernels accumulate dose contributions from particles within capture radius
+ * - Results stored in 3D arrays: [ensemble][timestep][receptor] (ensemble mode)
+ *                                 or 2D: [timestep][receptor] (single mode)
+ *
+ * Data Structures:
+ * - eki_observations: Host-side observation matrix for single mode
+ * - eki_ensemble_observations: Host-side observation tensor for ensemble mode
+ * - d_ensemble_dose: GPU-side accumulation buffer (persistent across timesteps)
+ * - d_receptor_lats/lons: GPU-side receptor locations
+ *
+ * Accumulation Strategy:
+ * - Kernels called EVERY timestep to accumulate dose into time_idx slots
+ * - Timesteps 1-9 → time_idx 0, timesteps 10-18 → time_idx 1, etc.
+ * - Results copied to host only at observation boundaries
+ * - GPU memory reset between EKI iterations but NOT between timesteps
+ *
+ * Grid Receptor Mode (Optional):
+ * - Regular grid of receptors for spatial field reconstruction
+ * - Used for debugging observation system and validation
+ * - Generates CSV time series for each grid point
+ * - Separate code path from EKI observation system
+ *
+ * Logging Format:
+ * - [EKI_OBS] tags for single-mode observations (parsed by Python visualization)
+ * - [EKI_ENSEMBLE_OBS] tags for ensemble-mode observations
+ * - Scientific notation for dose values, particle counts for verification
+ *
+ * @note Observation accumulation happens in GPU memory, minimizing host-device transfers
+ * @note Memory layout MUST match Python expectations (row-major flattening for shared memory)
+ *
+ * @see ldm_kernels_eki.cu for GPU kernel implementations
+ * @see ldm_eki_writer.cu for shared memory IPC to Python
+ * @see src/eki/eki_ipc_reader.py for Python observation reader
+ *
+ * @author Juryong Park
+ * @date 2025
+ *****************************************************************************/
 
 #include "../core/ldm.cuh"
 #include "ldm_func_output.cuh"
@@ -18,11 +67,40 @@ void test_g_logonly_from_output_module() {
     }
 }
 
+/******************************************************************************
+ * @brief Start high-resolution performance timer
+ *
+ * Records the current time point using std::chrono for later performance
+ * measurement. Used for profiling simulation sections.
+ *
+ * @post timerStart member variable set to current time
+ *
+ * @see stopTimer() to compute and report elapsed time
+ *
+ * @author Juryong Park
+ * @date 2025
+ *****************************************************************************/
 void LDM::startTimer(){
-        
+
         timerStart = std::chrono::high_resolution_clock::now();
     }
 
+/******************************************************************************
+ * @brief Stop performance timer and report elapsed time
+ *
+ * Computes time difference from last startTimer() call and outputs
+ * elapsed time in seconds to stdout.
+ *
+ * @pre startTimer() must have been called previously
+ * @post Elapsed time printed to stdout
+ *
+ * @note Time resolution: microseconds (1e-6 seconds)
+ *
+ * @see startTimer() to begin timing interval
+ *
+ * @author Juryong Park
+ * @date 2025
+ *****************************************************************************/
 void LDM::stopTimer(){
 
         timerEnd = std::chrono::high_resolution_clock::now();
@@ -30,6 +108,55 @@ void LDM::stopTimer(){
         std::cout << "Elapsed time: " << duration.count()/1.0e6 << " seconds" << std::endl;
     }
 
+/******************************************************************************
+ * @brief Initialize EKI observation system and allocate GPU memory
+ *
+ * Sets up the receptor-based observation collection system for EKI data
+ * assimilation. This function must be called once before running EKI
+ * simulations.
+ *
+ * Initialization Steps:
+ * 1. Validate receptor locations loaded from eki_settings.txt
+ * 2. Allocate GPU memory for receptor coordinates (d_receptor_lats/lons)
+ * 3. Allocate GPU memory for dose accumulation (d_receptor_dose)
+ * 4. Allocate GPU memory for particle count tracking
+ * 5. Copy receptor locations from host to GPU
+ * 6. Initialize dose/count arrays to zero
+ * 7. Clear host-side observation storage vectors
+ * 8. For ensemble mode: Allocate 3D ensemble dose arrays
+ *
+ * Memory Layout (Ensemble Mode):
+ * - d_ensemble_dose: [ensemble_size × num_receptors × num_timesteps] floats
+ * - d_ensemble_particle_count: Same dimensions, int type
+ * - Host storage: eki_ensemble_observations[ens][time][receptor]
+ *
+ * Memory Layout (Single Mode):
+ * - d_receptor_dose: [num_receptors] floats (accumulated per timestep)
+ * - Host storage: eki_observations[time][receptor] (2D)
+ *
+ * @pre g_eki.receptor_locations must be loaded from config file
+ * @pre g_eki.num_receptors > 0
+ * @pre GPU device available and selected
+ *
+ * @post GPU memory allocated for observation system
+ * @post Receptor locations transferred to GPU
+ * @post Host observation storage initialized
+ * @post System ready for computeReceptorObservations() calls
+ *
+ * @note Call once per simulation, NOT per EKI iteration
+ * @note For EKI iterations: Use resetEKIObservationSystemForNewIteration() instead
+ * @note Memory persists until cleanupEKIObservationSystem() called
+ *
+ * @warning Exits if receptor locations not loaded
+ * @warning Requires sufficient GPU memory (proportional to ensemble_size × num_receptors × num_timesteps)
+ *
+ * @see cleanupEKIObservationSystem() for memory deallocation
+ * @see resetEKIObservationSystemForNewIteration() for clearing between EKI iterations
+ * @see computeReceptorObservations() for observation collection
+ *
+ * @author Juryong Park
+ * @date 2025
+ *****************************************************************************/
 void LDM::initializeEKIObservationSystem() {
     std::cout << "Initializing observation system..." << std::endl;
     
@@ -119,6 +246,68 @@ void LDM::initializeEKIObservationSystem() {
     std::cout << "  Capture radius: " << g_eki.receptor_capture_radius << " degrees" << std::endl;
 }
 
+/******************************************************************************
+ * @brief Compute receptor observations for single-mode simulation
+ *
+ * Collects gamma dose observations at receptor locations by launching GPU
+ * kernel to accumulate contributions from nearby particles. This function
+ * is called EVERY timestep to maintain cumulative dose over observation
+ * periods.
+ *
+ * Accumulation Strategy:
+ * - Timesteps 1-9 accumulate into time_idx=0 (first observation period)
+ * - Timesteps 10-18 accumulate into time_idx=1 (second observation period)
+ * - Timesteps 19-27 accumulate into time_idx=2 (third observation period)
+ * - Formula: time_idx = (timestep - 1) / timesteps_per_observation
+ *
+ * Kernel Execution:
+ * - compute_eki_receptor_dose() kernel called each timestep
+ * - Kernel searches all particles for proximity to receptors
+ * - Particles within capture_radius contribute dose (distance-weighted)
+ * - Results accumulated in GPU memory (d_receptor_dose_2d)
+ *
+ * Host Copy Strategy:
+ * - GPU results copied to host only at observation boundaries
+ * - Boundaries: timestep % timesteps_per_observation == 0
+ * - Example: timesteps 9, 18, 27, 36, ... trigger host copy
+ * - Reduces expensive GPU-to-host transfers
+ *
+ * Data Structures:
+ * - d_receptor_dose_2d: 2D GPU array [num_timesteps × num_receptors]
+ * - eki_observations: Host vector of observation vectors
+ * - eki_particle_counts: Parallel vector tracking particle counts
+ * - Static variables: Persist across function calls for accumulation
+ *
+ * Logging:
+ * - Debug logs to g_log_file (function traces, data ranges)
+ * - [EKI_OBS] tags for Python visualization parser
+ * - Scientific notation for dose values, particle counts
+ *
+ * @param[in] timestep Current simulation timestep (1-indexed, 0 skipped)
+ * @param[in] currentTime Current simulation time in seconds
+ *
+ * @pre initializeEKIObservationSystem() must be called first
+ * @pre d_part contains valid particle data on GPU
+ * @pre timestep > 0 (timestep 0 is skipped)
+ *
+ * @post Dose accumulated in GPU memory for current time_idx
+ * @post At observation boundaries: Results copied to eki_observations vector
+ * @post [EKI_OBS] log entry written at observation boundaries
+ *
+ * @note Called every timestep but only copies to host at boundaries
+ * @note Static GPU memory allocated on first call, reused thereafter
+ * @note Particle count logged for verification (should increase over time)
+ *
+ * @warning time_idx must be < max_observations to avoid buffer overflow
+ * @warning Static GPU pointers: Not thread-safe (single simulation instance only)
+ *
+ * @see compute_eki_receptor_dose() GPU kernel for dose calculation
+ * @see computeReceptorObservations_AllEnsembles() for ensemble mode
+ * @see saveEKIObservationResults() to export observations to file
+ *
+ * @author Juryong Park
+ * @date 2025
+ *****************************************************************************/
 void LDM::computeReceptorObservations(int timestep, float currentTime) {
     // FIXED: Match reference code ACCUMULATION mode
     // Reference calls kernel every timestep, accumulating into different time_idx slots
@@ -333,6 +522,76 @@ bool LDM::writeEKIObservationsToSharedMemory(void* writer_ptr) {
     return true;
 }
 
+/******************************************************************************
+ * @brief Compute receptor observations for all ensemble members in parallel
+ *
+ * Ensemble-mode variant of computeReceptorObservations() that processes
+ * multiple ensemble simulations simultaneously. Each ensemble member has
+ * independent particles that contribute to separate observation channels.
+ *
+ * Ensemble Organization:
+ * - Total particles: nop × ensemble_size (e.g., 10000 × 100 = 1M particles)
+ * - Particle layout: First nop particles = ensemble 0, next nop = ensemble 1, etc.
+ * - Each ensemble has separate emission time series (perturbed source terms)
+ * - Observation kernel processes all ensembles in single GPU launch
+ *
+ * Accumulation Strategy:
+ * - Same time_idx formula as single mode: (timestep - 1) / timesteps_per_observation
+ * - Kernel called EVERY timestep to accumulate into time_idx slots
+ * - GPU memory layout: [ensemble][timestep][receptor] (3D array)
+ * - Results copied to host only at observation boundaries
+ *
+ * Kernel Execution:
+ * - compute_eki_receptor_dose_ensemble() kernel called each timestep
+ * - Kernel uses particle.ensemble_id to route contributions
+ * - Each ensemble accumulates independently in parallel
+ * - Single kernel launch processes all ensembles (efficient GPU utilization)
+ *
+ * Memory Management:
+ * - d_ensemble_dose: [ensemble_size × num_timesteps × num_receptors] floats
+ * - Persistent across timesteps within iteration
+ * - Reset to zero at start of each EKI iteration
+ * - Emergency allocation if not initialized (should not happen)
+ *
+ * Data Structures:
+ * - eki_ensemble_observations[ens][time][receptor]: Host storage (3D)
+ * - eki_ensemble_particle_counts[ens][time][receptor]: Parallel counts (3D)
+ * - Index mapping: idx = ens*(TIME*RECEPT) + time_idx*RECEPT + receptor
+ *
+ * Logging:
+ * - [EKI_ENSEMBLE_OBS] tags for Python parser
+ * - Mean particle count across ensembles reported
+ * - Statistics (first ensemble, mean) logged for verification
+ *
+ * @param[in] timestep Current simulation timestep (1-indexed, 0 skipped)
+ * @param[in] currentTime Current simulation time in seconds
+ * @param[in] num_ensembles Number of ensemble members (e.g., 100)
+ * @param[in] num_timesteps Number of observation time periods (e.g., 12)
+ *
+ * @pre initializeEKIObservationSystem() called with is_ensemble_mode=true
+ * @pre d_ensemble_dose allocated and zeroed
+ * @pre Particles initialized with ensemble_id field set
+ * @pre part.size() == nop * num_ensembles
+ *
+ * @post Dose accumulated for all ensembles in GPU memory
+ * @post At boundaries: Results copied to eki_ensemble_observations
+ * @post [EKI_ENSEMBLE_OBS] log entry with mean particle counts
+ *
+ * @note Parallel processing: All ensembles computed in single kernel launch
+ * @note Memory efficiency: 3D GPU array reused across timesteps
+ * @note Host copy only at boundaries to minimize transfer overhead
+ *
+ * @warning Requires d_ensemble_dose pre-allocated (emergency allocation as fallback)
+ * @warning Particle ensemble_id must be correctly set during initialization
+ * @warning GPU memory proportional to ensemble_size (can be very large)
+ *
+ * @see compute_eki_receptor_dose_ensemble() GPU kernel
+ * @see initializeParticlesEKI_AllEnsembles() for particle setup
+ * @see computeReceptorObservations() for single-mode variant
+ *
+ * @author Juryong Park
+ * @date 2025
+ *****************************************************************************/
 void LDM::computeReceptorObservations_AllEnsembles(int timestep, float currentTime, int num_ensembles, int num_timesteps) {
     // FIXED: Match reference code ACCUMULATION mode for ensemble
     // Reference calls kernel every timestep, accumulating into different time_idx slots

@@ -1,9 +1,40 @@
+/******************************************************************************
+ * @file ldm.cuh
+ * @brief Main header file for Lagrangian Dispersion Model (LDM) class
+ *
+ * This header defines the LDM class, which is the central orchestrator for
+ * GPU-accelerated atmospheric dispersion simulations. The class manages:
+ * - Particle tracking with CUDA kernels
+ * - Meteorological data loading and interpolation
+ * - Radioactive decay chains (CRAM method)
+ * - EKI ensemble inversion coupling
+ * - VTK visualization output
+ *
+ * Architecture:
+ * - Host (CPU): Configuration, I/O, orchestration
+ * - Device (GPU): Particle advection, turbulent diffusion, decay kernels
+ * - Hybrid: Meteorological data cached on both host and device
+ *
+ * Key Design Patterns:
+ * - Singleton: NuclideConfig, ConfigReader
+ * - Data-oriented design: Large particle arrays processed in parallel
+ * - Cache-friendly: Preload meteorology for EKI iterations
+ *
+ * @author Juryong Park
+ * @date 2025
+ *****************************************************************************/
+
 #pragma once
 
-// MPI header removed - not using MPI functions
-// #include <mpi.h>
+// ===========================================================================
+// System Headers
+// ===========================================================================
+
+// CUDA runtime and device libraries
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
+
+// Standard C++ libraries
 #include <iostream>
 #include <cstdio>
 #include <vector>
@@ -15,6 +46,8 @@
 #include <math.h>
 #include <limits>
 #include <float.h>
+
+// Timing and concurrency
 #include <chrono>
 #include <random>
 #include <tuple>
@@ -39,35 +72,70 @@
     #include <sys/stat.h>
 #endif
 
-// Physics model host variables (loaded from setting.txt)
-extern int g_turb_switch;
-extern int g_drydep;
-extern int g_wetdep;
-extern int g_raddecay;
+// ===========================================================================
+// Global Physics Model Switches
+// ===========================================================================
 
-// Physics model device constant memory (for kernels)
-// NOTE: Scalar constants removed - now passed via KernelScalars struct to avoid
-//       invalid device symbol errors in non-RDC mode
-// Arrays (d_flex_hgt, T_const) are defined in device_storage.cu
+// Physics model flags (loaded from physics.conf)
+// These control which physical processes are simulated:
+extern int g_turb_switch;  // Turbulent diffusion (0=off, 1=on)
+extern int g_drydep;       // Dry deposition (0=off, 1=on)
+extern int g_wetdep;       // Wet deposition (0=off, 1=on)
+extern int g_raddecay;     // Radioactive decay (0=off, 1=on)
 
-// Backward compatibility macros removed - use KernelScalars struct instead
+// ===========================================================================
+// Device Memory Organization Notes
+// ===========================================================================
 
-// CRAM Debug and Decay-Only Mode
-// #define DECAY_ONLY 1
+// CUDA Constant Memory Removal:
+// - Scalar constants previously in __constant__ memory are now passed
+//   via KernelScalars struct to avoid "invalid device symbol" errors
+//   in non-RDC (relocatable device code) compilation mode
+// - Arrays (d_flex_hgt, T_matrix) allocated with cudaMalloc for flexibility
+// - This approach improves portability across CUDA architectures
 
-// Modern configuration structures
+// ===========================================================================
+// Configuration Structures (Modern Architecture)
+// ===========================================================================
+
+/******************************************************************************
+ * @struct SimulationConfig
+ * @brief Core simulation parameters (time integration, particles, domain)
+ *
+ * Loaded from: simulation.conf
+ *
+ * Time Integration:
+ * - timeEnd: Total simulation duration [seconds]
+ * - deltaTime: Timestep for particle advection [seconds]
+ * - outputFrequency: VTK output interval [timesteps]
+ *
+ * Particle Configuration:
+ * - numParticles: Total number of particles released
+ * - settlingVelocity: Gravitational settling speed [m/s]
+ * - cunninghamFactor: Slip correction factor (dimensionless)
+ *
+ * Meteorology Source:
+ * - isGFS: true = GFS global reanalysis, false = LDAPS regional model
+ * - gfsIndex: Time index in GFS file sequence
+ *
+ * Dispersion Model:
+ * - isRural: true = rural terrain, false = urban terrain
+ * - isPasquillGifford: true = P-G scheme, false = similarity theory
+ *
+ * @note Parameters validated during loadSimulationConfig()
+ *****************************************************************************/
 struct SimulationConfig {
-    float timeEnd;
-    float deltaTime;
-    int outputFrequency;
-    int numParticles;
-    int gfsIndex = 0;
-    bool isRural;
-    bool isPasquillGifford;
-    bool isGFS;
-    float settlingVelocity = 0.0;
-    float cunninghamFactor = 0.0;
-    bool fixedScrollOutput = true;  // Terminal fixed-position output (1=enabled, 0=disabled)
+    float timeEnd;                      // Simulation end time [s]
+    float deltaTime;                    // Integration timestep [s]
+    int outputFrequency;                // VTK output interval [timesteps]
+    int numParticles;                   // Total particle count
+    int gfsIndex = 0;                   // GFS file time index
+    bool isRural;                       // Rural vs urban terrain
+    bool isPasquillGifford;             // P-G vs similarity theory
+    bool isGFS;                         // GFS vs LDAPS meteorology
+    float settlingVelocity = 0.0;       // Gravitational settling [m/s]
+    float cunninghamFactor = 0.0;       // Slip correction factor
+    bool fixedScrollOutput = true;      // Terminal fixed-position output
 };
 
 struct MPIConfig {
@@ -124,38 +192,71 @@ struct EKIConfig {
     bool memory_doctor_mode = false;
 };
 
-// EKI용 기상자료 사전 로딩 구조체
+/******************************************************************************
+ * @struct EKIMeteorologicalData
+ * @brief Preloaded meteorological data cache for EKI ensemble iterations
+ *
+ * Performance Optimization:
+ * EKI requires running 10-100 iterations, each simulating 50-100 ensemble
+ * members. Loading meteorological files from disk for every iteration would
+ * create severe I/O bottleneck. This structure preloads ALL timesteps into
+ * memory once before iteration loop begins.
+ *
+ * Memory Layout:
+ * - Host: std::vector<FlexPres*> - All timesteps in CPU RAM
+ * - Device: FlexPres** - Array of GPU pointers to each timestep
+ * - Interpolation slots: Past/future timestep buffers for temporal interpolation
+ *
+ * Typical Memory Usage (100 ensembles, 48 timesteps, GFS 26 levels):
+ * - FlexPres: ~200 MB per timestep × 48 = 9.6 GB
+ * - FlexUnis: ~50 MB per timestep × 48 = 2.4 GB
+ * - Total: ~12 GB GPU memory (requires high-end GPU)
+ *
+ * Lifecycle:
+ * 1. Preload: Call LDM::preloadAllEKIMeteorologicalData() before iteration loop
+ * 2. Access: Kernels access via device_flex_pres_data[timestep_index]
+ * 3. Cleanup: Automatic via destructor or explicit cleanup()
+ *
+ * @note Requires GPU with sufficient memory (12+ GB recommended)
+ * @note Initialization sets is_initialized = true for safety checks
+ *
+ * @see LDM::preloadAllEKIMeteorologicalData()
+ * @see LDM::cleanupEKIMeteorologicalData()
+ *
+ * @author Juryong Park
+ * @date 2025
+ *****************************************************************************/
 struct EKIMeteorologicalData {
-    int num_time_steps = 0;
-    
-    // Host 메모리에 저장된 모든 시간대의 기상자료
-    std::vector<FlexPres*> host_flex_pres_data;
-    std::vector<FlexUnis*> host_flex_unis_data;
-    std::vector<std::vector<float>> host_flex_hgt_data;
-    
-    // GPU 메모리에 저장된 모든 시간대의 기상자료 (동적할당)
-    FlexPres** device_flex_pres_data = nullptr;
-    FlexUnis** device_flex_unis_data = nullptr;
-    float** device_flex_hgt_data = nullptr;
-    
-    // 기존 LDM GPU 메모리 슬롯 (시간 내삽용)
-    FlexPres* ldm_pres0_slot = nullptr;  // 과거 데이터 슬롯
-    FlexUnis* ldm_unis0_slot = nullptr;
-    FlexPres* ldm_pres1_slot = nullptr;  // 미래 데이터 슬롯  
-    FlexUnis* ldm_unis1_slot = nullptr;
-    
-    // 메모리 사이즈
-    size_t pres_data_size = 0;
-    size_t unis_data_size = 0;
-    size_t hgt_data_size = 0;
-    
-    // 초기화 상태
+    int num_time_steps = 0;  // Number of preloaded timesteps
+
+    // Host memory: All timesteps cached in CPU RAM
+    std::vector<FlexPres*> host_flex_pres_data;       // Pressure-level fields
+    std::vector<FlexUnis*> host_flex_unis_data;       // Surface fields
+    std::vector<std::vector<float>> host_flex_hgt_data; // Height levels
+
+    // Device memory: Array of GPU pointers (one per timestep)
+    FlexPres** device_flex_pres_data = nullptr;  // GPU pointer array
+    FlexUnis** device_flex_unis_data = nullptr;  // GPU pointer array
+    float** device_flex_hgt_data = nullptr;      // GPU pointer array
+
+    // Temporal interpolation buffers (past and future timesteps)
+    FlexPres* ldm_pres0_slot = nullptr;  // Past timestep buffer
+    FlexUnis* ldm_unis0_slot = nullptr;  // Past timestep buffer
+    FlexPres* ldm_pres1_slot = nullptr;  // Future timestep buffer
+    FlexUnis* ldm_unis1_slot = nullptr;  // Future timestep buffer
+
+    // Memory allocation sizes (bytes)
+    size_t pres_data_size = 0;  // FlexPres structure size
+    size_t unis_data_size = 0;  // FlexUnis structure size
+    size_t hgt_data_size = 0;   // Height array size
+
+    // Initialization state flag (safety check)
     bool is_initialized = false;
-    
-    // 소멸자에서 메모리 정리
+
+    // Destructor: Automatic cleanup when object goes out of scope
     ~EKIMeteorologicalData();
 
-    // 메모리 정리 함수 (구현은 ldm.cu에)
+    // Explicit cleanup function (can be called before destructor)
     void cleanup();
 };
 

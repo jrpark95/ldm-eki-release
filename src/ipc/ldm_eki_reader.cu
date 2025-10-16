@@ -1,4 +1,13 @@
-// ldm_eki_reader.cu - Implementation of EKI IPC Reader
+////////////////////////////////////////////////////////////////////////////////
+/// @file    ldm_eki_reader.cu
+/// @brief   Implementation of IPC reader for Python→LDM communication
+/// @details Implements POSIX shared memory operations for receiving updated
+///          ensemble states from Python EKI optimization process.
+///
+/// @author  Juryong Park
+/// @date    2025
+////////////////////////////////////////////////////////////////////////////////
+
 #include "ldm_eki_reader.cuh"
 #include "../debug/memory_doctor.cuh"
 #include <numeric>
@@ -6,9 +15,9 @@
 
 namespace LDM_EKI_IPC {
 
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 // Constructor / Destructor
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 
 EKIReader::EKIReader()
     : config_fd(-1), data_fd(-1), config_map(nullptr),
@@ -19,10 +28,32 @@ EKIReader::~EKIReader() {
     cleanup();
 }
 
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 // Wait for Ensemble Data
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 
+////////////////////////////////////////////////////////////////////////////////
+/// @brief Wait for fresh ensemble data from Python to become available
+///
+/// @details
+/// Polls shared memory files until fresh data appears. Uses timestep_id
+/// for freshness detection to prevent re-reading stale data.
+///
+/// Polling Strategy:
+/// - Check every 1 second (low CPU usage)
+/// - Timeout after specified duration
+/// - Print status messages every 5 seconds
+///
+/// Freshness Detection:
+/// - Static variable last_iteration_id tracks last processed iteration
+/// - Only returns true when config.timestep_id > last_iteration_id
+/// - Prevents duplicate processing of same iteration
+///
+/// @param[in] timeout_seconds      Maximum wait time [seconds]
+/// @param[in] expected_iteration   Expected iteration (unused, for future)
+///
+/// @return true if fresh data detected, false on timeout
+////////////////////////////////////////////////////////////////////////////////
 bool EKIReader::waitForEnsembleData(int timeout_seconds, int expected_iteration) {
     std::cout << Color::CYAN << "[IPC] " << Color::RESET
               << "Waiting for ensemble data from Python (timeout: "
@@ -79,10 +110,23 @@ bool EKIReader::waitForEnsembleData(int timeout_seconds, int expected_iteration)
     return false;
 }
 
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 // Read Configuration
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 
+////////////////////////////////////////////////////////////////////////////////
+/// @brief Read ensemble configuration from shared memory
+///
+/// @details
+/// Opens, reads, and closes the configuration file in one operation.
+/// This is a stateless read - does not keep file descriptor open.
+///
+/// @param[out] num_states    Number of state variables
+/// @param[out] num_ensemble  Number of ensemble members
+/// @param[out] timestep_id   Current iteration identifier
+///
+/// @return true if read successful, false on error
+////////////////////////////////////////////////////////////////////////////////
 bool EKIReader::readEnsembleConfig(int& num_states, int& num_ensemble, int& timestep_id) {
     const char* shm_path = "/dev/shm/ldm_eki_ensemble_config";
 
@@ -112,10 +156,30 @@ bool EKIReader::readEnsembleConfig(int& num_states, int& num_ensemble, int& time
     return true;
 }
 
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 // Read Ensemble States
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 
+////////////////////////////////////////////////////////////////////////////////
+/// @brief Read ensemble state matrix from shared memory
+///
+/// @details
+/// Performs a complete read operation:
+/// 1. Read configuration to get dimensions
+/// 2. Verify file size matches expected dimensions
+/// 3. Memory-map data segment
+/// 4. Validate header (status=1, dimensions match)
+/// 5. Copy data to output vector
+/// 6. Calculate statistics for validation
+/// 7. Log to Memory Doctor if enabled
+/// 8. Cleanup mapping
+///
+/// @param[out] output        Output vector for state data
+/// @param[out] num_states    Number of state variables
+/// @param[out] num_ensemble  Number of ensemble members
+///
+/// @return true if read successful, false on error
+////////////////////////////////////////////////////////////////////////////////
 bool EKIReader::readEnsembleStates(std::vector<float>& output, int& num_states, int& num_ensemble) {
     // First read config
     int timestep_id;
@@ -218,10 +282,20 @@ bool EKIReader::readEnsembleStates(std::vector<float>& output, int& num_states, 
     return true;
 }
 
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 // Cleanup
-// ============================================================================
+////////////////////////////////////////////////////////////////////////////////
 
+////////////////////////////////////////////////////////////////////////////////
+/// @brief Cleanup resources and unmap memory
+///
+/// @details
+/// Unmaps memory and closes file descriptors. Does NOT unlink shared
+/// memory files from /dev/shm.
+///
+/// @post All memory unmapped and file descriptors closed
+/// @post initialized flag set to false
+////////////////////////////////////////////////////////////////////////////////
 void EKIReader::cleanup() {
     if (data_map) {
         munmap(data_map, data_size);
@@ -242,6 +316,16 @@ void EKIReader::cleanup() {
     initialized = false;
 }
 
+////////////////////////////////////////////////////////////////////////////////
+/// @brief Unlink ensemble shared memory segments from filesystem
+///
+/// @details
+/// Removes ensemble shared memory files from /dev/shm. Should be called
+/// at program exit after all operations complete.
+///
+/// @post /dev/shm/ldm_eki_ensemble_config removed
+/// @post /dev/shm/ldm_eki_ensemble_data removed
+////////////////////////////////////////////////////////////////////////////////
 void EKIReader::unlinkEnsembleSharedMemory() {
     shm_unlink(SHM_ENSEMBLE_CONFIG_NAME);
     shm_unlink(SHM_ENSEMBLE_DATA_NAME);

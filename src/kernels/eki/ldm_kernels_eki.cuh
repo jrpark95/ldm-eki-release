@@ -5,6 +5,8 @@
  * @details This module implements the EKI (Ensemble Kalman Inversion) observation
  *          kernels that compute receptor measurements based on particle positions.
  *          Supports both single-mode and ensemble-mode simulations.
+ *
+ * @author Juryong Park, 2025
  */
 
 #pragma once

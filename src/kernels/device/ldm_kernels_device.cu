@@ -150,10 +150,20 @@ __global__ void update_particle_flags(
 
         LDM::LDMpart& p = d_part[idx];
 
-        // Activate particles based on their index and current activationRatio
-        int maxActiveIndex = int(d_nop * activationRatio);
-        if (idx <= maxActiveIndex){
+        // Activate particles based on their timeidx and current activationRatio
+        int maxActiveTimeidx = int(d_nop * activationRatio);
+
+        // Debug first particle activation decision
+        if (idx == 0) {
+            printf("[GPU_ACTIVATION] Particle 0: timeidx=%d, maxActiveTimeidx=%d, should_activate=%d, current_flag=%d\n",
+                   p.timeidx, maxActiveTimeidx, (p.timeidx <= maxActiveTimeidx) ? 1 : 0, p.flag);
+        }
+
+        if (p.timeidx <= maxActiveTimeidx){  // Changed from idx to p.timeidx
             p.flag = 1;
+            if (idx == 0) {
+                printf("[GPU_ACTIVATION] Particle 0: flag SET to 1\n");
+            }
         }
     }
 

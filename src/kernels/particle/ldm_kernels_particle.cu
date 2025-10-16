@@ -226,7 +226,18 @@ __global__ void move_part_by_wind_mpi(
         met_p1[6] = device_meteorological_flex_pres1[(safe_xidx) * dimY_GFS * dimZ_GFS + (safe_yidx+1) * dimZ_GFS + (safe_zidx+1)];
         met_p1[7] = device_meteorological_flex_pres1[(safe_xidx+1) * dimY_GFS * dimZ_GFS + (safe_yidx+1) * dimZ_GFS + (safe_zidx+1)];
         
-        // Debug disabled for performance
+        // GPU meteorological data debug - check actual values from GPU memory
+        if (idx == 0) {
+            static int gpu_meteo_debug = 0;
+            if (gpu_meteo_debug < 2) {
+                printf("[GPU_METEO] Particle 0 at indices (xidx=%d, yidx=%d, zidx=%d, t0=%.3f):\n",
+                       safe_xidx, safe_yidx, safe_zidx, t0);
+                printf("  met_p0[0].UU=%.3f VV=%.3f WW=%.3f\n", met_p0[0].UU, met_p0[0].VV, met_p0[0].WW);
+                printf("  met_p0[1].UU=%.3f VV=%.3f WW=%.3f\n", met_p0[1].UU, met_p0[1].VV, met_p0[1].WW);
+                printf("  met_p1[0].UU=%.3f VV=%.3f WW=%.3f\n", met_p1[0].UU, met_p1[0].VV, met_p1[0].WW);
+                gpu_meteo_debug++;
+            }
+        }
 
         float temp = x1*y1*z1*t1*met_p0[0].TT + x0*y1*z1*t1*met_p0[1].TT + x1*y0*z1*t1*met_p0[2].TT + x0*y0*z1*t1*met_p0[3].TT
                     +x1*y1*z0*t1*met_p0[4].TT + x0*y1*z0*t1*met_p0[5].TT + x1*y0*z0*t1*met_p0[6].TT + x0*y0*z0*t1*met_p0[7].TT

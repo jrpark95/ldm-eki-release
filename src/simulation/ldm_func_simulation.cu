@@ -265,14 +265,42 @@ void LDM::runSimulation_eki(){
             cudaMemcpy(&past_unis_ptr, &g_eki_meteo.device_flex_unis_data[past_meteo_index], 
                        sizeof(FlexUnis*), cudaMemcpyDeviceToHost);
             
-            cudaMemcpy(device_meteorological_flex_pres0, past_pres_ptr, 
+            cudaMemcpy(device_meteorological_flex_pres0, past_pres_ptr,
                        g_eki_meteo.pres_data_size, cudaMemcpyDeviceToDevice);
-            cudaMemcpy(device_meteorological_flex_unis0, past_unis_ptr, 
+            cudaMemcpy(device_meteorological_flex_unis0, past_unis_ptr,
                        g_eki_meteo.unis_data_size, cudaMemcpyDeviceToDevice);
-            
+
+            // DEBUG: Verify GPU meteorological data at first timestep
+            if (timestep == 0) {
+                FlexPres sample_pres[3];
+                // Sample at particle's expected location (source: 37.0°N, 141.0°E)
+                // GFS coordinates: lon_idx = (141 + 179) / 0.5 = 640, lat_idx = (37 + 90) / 0.5 = 254
+                int test_xidx = 640;  // 141°E
+                int test_yidx = 254;  // 37°N
+                int test_zidx = 5;    // ~1000m altitude
+
+                int idx0 = test_xidx * dimY_GFS * dimZ_GFS + test_yidx * dimZ_GFS + test_zidx;
+                int idx1 = (test_xidx+1) * dimY_GFS * dimZ_GFS + test_yidx * dimZ_GFS + test_zidx;
+                int idx2 = test_xidx * dimY_GFS * dimZ_GFS + (test_yidx+1) * dimZ_GFS + test_zidx;
+
+                cudaMemcpy(sample_pres, &device_meteorological_flex_pres0[idx0], sizeof(FlexPres), cudaMemcpyDeviceToHost);
+                cudaMemcpy(sample_pres+1, &device_meteorological_flex_pres0[idx1], sizeof(FlexPres), cudaMemcpyDeviceToHost);
+                cudaMemcpy(sample_pres+2, &device_meteorological_flex_pres0[idx2], sizeof(FlexPres), cudaMemcpyDeviceToHost);
+
+                extern std::ofstream* g_log_file;
+                if (g_log_file && g_log_file->is_open()) {
+                    *g_log_file << "[GPU_METEO_VERIFY] Timestep 0 - GPU meteorological data at source location (141°E, 37°N, ~1km):\n";
+                    *g_log_file << "  Grid indices: xidx=" << test_xidx << ", yidx=" << test_yidx << ", zidx=" << test_zidx << "\n";
+                    *g_log_file << "  Point [" << test_xidx << "," << test_yidx << "," << test_zidx << "]: UU=" << sample_pres[0].UU << " VV=" << sample_pres[0].VV << " WW=" << sample_pres[0].WW << " m/s\n";
+                    *g_log_file << "  Point [" << (test_xidx+1) << "," << test_yidx << "," << test_zidx << "]: UU=" << sample_pres[1].UU << " VV=" << sample_pres[1].VV << " WW=" << sample_pres[1].WW << " m/s\n";
+                    *g_log_file << "  Point [" << test_xidx << "," << (test_yidx+1) << "," << test_zidx << "]: UU=" << sample_pres[2].UU << " VV=" << sample_pres[2].VV << " WW=" << sample_pres[2].WW << " m/s\n";
+                    *g_log_file << std::flush;
+                }
+            }
+
             // Update height data as well
             flex_hgt = g_eki_meteo.host_flex_hgt_data[past_meteo_index];
-            
+
 #ifdef DEBUG
             // Verify height data at first timestep only
             if (timestep == 0) {
@@ -390,8 +418,8 @@ void LDM::runSimulation_eki(){
 
         timestep++; 
 
-        // Debug: Copy and print first particle position every 5 timesteps  
-        if(timestep % 5 == 0) {  // Every 5 timesteps for tracking
+        // Debug: Copy and print first particle position every timestep (first 10 steps)
+        if(timestep <= 10) {
             LDMpart first_particle;
             cudaError_t err = cudaMemcpy(&first_particle, d_part, sizeof(LDMpart), cudaMemcpyDeviceToHost);
             if (err == cudaSuccess) {
@@ -399,6 +427,18 @@ void LDM::runSimulation_eki(){
                 float lon = first_particle.x * 0.5f - 179.0f;
                 float lat = first_particle.y * 0.5f - 90.0f;
                 float z = first_particle.z;
+
+                extern std::ofstream* g_log_file;
+                if (g_log_file && g_log_file->is_open()) {
+                    *g_log_file << "[PARTICLE_POSITION] Timestep " << timestep << " (t=" << currentTime << "s): "
+                                << "lon=" << lon << "°E, lat=" << lat << "°N, z=" << z << "m, "
+                                << "flag=" << (first_particle.flag ? "active" : "inactive") << ", "
+                                << "timeidx=" << first_particle.timeidx << ", "
+                                << "activationRatio=" << activationRatio << ", "
+                                << "maxActiveTimeidx=" << int(part.size() * activationRatio) << ", "
+                                << "u_wind=" << first_particle.u_wind << ", v_wind=" << first_particle.v_wind << ", w_wind=" << first_particle.w_wind << " m/s\n"
+                                << std::flush;
+                }
             }
         }
 
@@ -584,14 +624,42 @@ void LDM::runSimulation_eki_dump(){
             cudaMemcpy(&past_unis_ptr, &g_eki_meteo.device_flex_unis_data[past_meteo_index], 
                        sizeof(FlexUnis*), cudaMemcpyDeviceToHost);
             
-            cudaMemcpy(device_meteorological_flex_pres0, past_pres_ptr, 
+            cudaMemcpy(device_meteorological_flex_pres0, past_pres_ptr,
                        g_eki_meteo.pres_data_size, cudaMemcpyDeviceToDevice);
-            cudaMemcpy(device_meteorological_flex_unis0, past_unis_ptr, 
+            cudaMemcpy(device_meteorological_flex_unis0, past_unis_ptr,
                        g_eki_meteo.unis_data_size, cudaMemcpyDeviceToDevice);
-            
+
+            // DEBUG: Verify GPU meteorological data at first timestep
+            if (timestep == 0) {
+                FlexPres sample_pres[3];
+                // Sample at particle's expected location (source: 37.0°N, 141.0°E)
+                // GFS coordinates: lon_idx = (141 + 179) / 0.5 = 640, lat_idx = (37 + 90) / 0.5 = 254
+                int test_xidx = 640;  // 141°E
+                int test_yidx = 254;  // 37°N
+                int test_zidx = 5;    // ~1000m altitude
+
+                int idx0 = test_xidx * dimY_GFS * dimZ_GFS + test_yidx * dimZ_GFS + test_zidx;
+                int idx1 = (test_xidx+1) * dimY_GFS * dimZ_GFS + test_yidx * dimZ_GFS + test_zidx;
+                int idx2 = test_xidx * dimY_GFS * dimZ_GFS + (test_yidx+1) * dimZ_GFS + test_zidx;
+
+                cudaMemcpy(sample_pres, &device_meteorological_flex_pres0[idx0], sizeof(FlexPres), cudaMemcpyDeviceToHost);
+                cudaMemcpy(sample_pres+1, &device_meteorological_flex_pres0[idx1], sizeof(FlexPres), cudaMemcpyDeviceToHost);
+                cudaMemcpy(sample_pres+2, &device_meteorological_flex_pres0[idx2], sizeof(FlexPres), cudaMemcpyDeviceToHost);
+
+                extern std::ofstream* g_log_file;
+                if (g_log_file && g_log_file->is_open()) {
+                    *g_log_file << "[GPU_METEO_VERIFY] Timestep 0 - GPU meteorological data at source location (141°E, 37°N, ~1km):\n";
+                    *g_log_file << "  Grid indices: xidx=" << test_xidx << ", yidx=" << test_yidx << ", zidx=" << test_zidx << "\n";
+                    *g_log_file << "  Point [" << test_xidx << "," << test_yidx << "," << test_zidx << "]: UU=" << sample_pres[0].UU << " VV=" << sample_pres[0].VV << " WW=" << sample_pres[0].WW << " m/s\n";
+                    *g_log_file << "  Point [" << (test_xidx+1) << "," << test_yidx << "," << test_zidx << "]: UU=" << sample_pres[1].UU << " VV=" << sample_pres[1].VV << " WW=" << sample_pres[1].WW << " m/s\n";
+                    *g_log_file << "  Point [" << test_xidx << "," << (test_yidx+1) << "," << test_zidx << "]: UU=" << sample_pres[2].UU << " VV=" << sample_pres[2].VV << " WW=" << sample_pres[2].WW << " m/s\n";
+                    *g_log_file << std::flush;
+                }
+            }
+
             // Update height data as well
             flex_hgt = g_eki_meteo.host_flex_hgt_data[past_meteo_index];
-            
+
 #ifdef DEBUG
             // Verify height data at first timestep only
             if (timestep == 0) {
@@ -709,8 +777,8 @@ void LDM::runSimulation_eki_dump(){
 
         timestep++; 
 
-        // Debug: Copy and print first particle position every 5 timesteps  
-        if(timestep % 5 == 0) {  // Every 5 timesteps for tracking
+        // Debug: Copy and print first particle position every timestep (first 10 steps)
+        if(timestep <= 10) {
             LDMpart first_particle;
             cudaError_t err = cudaMemcpy(&first_particle, d_part, sizeof(LDMpart), cudaMemcpyDeviceToHost);
             if (err == cudaSuccess) {
@@ -718,6 +786,18 @@ void LDM::runSimulation_eki_dump(){
                 float lon = first_particle.x * 0.5f - 179.0f;
                 float lat = first_particle.y * 0.5f - 90.0f;
                 float z = first_particle.z;
+
+                extern std::ofstream* g_log_file;
+                if (g_log_file && g_log_file->is_open()) {
+                    *g_log_file << "[PARTICLE_POSITION] Timestep " << timestep << " (t=" << currentTime << "s): "
+                                << "lon=" << lon << "°E, lat=" << lat << "°N, z=" << z << "m, "
+                                << "flag=" << (first_particle.flag ? "active" : "inactive") << ", "
+                                << "timeidx=" << first_particle.timeidx << ", "
+                                << "activationRatio=" << activationRatio << ", "
+                                << "maxActiveTimeidx=" << int(part.size() * activationRatio) << ", "
+                                << "u_wind=" << first_particle.u_wind << ", v_wind=" << first_particle.v_wind << ", w_wind=" << first_particle.w_wind << " m/s\n"
+                                << std::flush;
+                }
             }
         }
 

@@ -963,3 +963,158 @@ total_particles: 10000
 - 논문 supplementary material로 사용 가능한 수준
 - 완전한 하위 호환성 유지
 - 자율 작업으로 1회 세션에 완료
+
+### Comprehensive Input Validation (2025-10-17)
+
+**목적**: 모든 입력 파일 파서에 세계 최고 수준의 입력 검증 로직 추가로 잘못된 설정값에 대한 즉시 실패 및 친절한 가이드 제공
+
+**설계 철학**:
+- **Fail-fast**: 잘못된 값 발견 시 즉시 종료 (디폴트 값 사용 금지)
+- **Educational errors**: 문제, 요구사항, 권장값, 수정 위치를 모두 포함한 상세 에러 메시지
+- **Physical validation**: 단순 타입 체크가 아닌 물리적/통계적 타당성 검증
+- **User guidance**: 예제와 맥락을 포함한 사용자 친화적 설명
+
+**구현 내용** (`src/init/ldm_init_config.cu`):
+
+1. **Simulation Config 검증** (`loadSimulationConfig()`, lines 647-966)
+   - `time_end`: 0 < t ≤ 604800초 (7일) 검증
+   - `time_step`: 0 < dt ≤ 3600초 및 dt < time_end 검증
+   - `vtk_output_frequency`: ≥ 1 (> 1000이면 경고)
+   - `total_particles`: 100 ≤ n ≤ 100,000,000 (통계적 신뢰성 확보)
+   - Boolean 플래그: 0 또는 1만 허용
+
+2. **Physics Config 검증** (`loadPhysicsConfig()`, lines 984-1103)
+   - 4개 물리 모델 스위치 모두 0/1 검증
+   - 잘못된 값 발견 시 물리적 의미 설명과 함께 종료
+
+3. **Source Config 검증** (`loadSourceConfig()`, lines 1125-1329)
+   - 경도: -180° ≤ lon ≤ 180° (지리적 범위)
+   - 위도: -90° ≤ lat ≤ 90° (지리적 범위)
+   - 높이: 0 ≤ h ≤ 20,000m (대기권 범위)
+   - 파싱 검증: 3개 값 모두 올바르게 읽혔는지 확인
+   - 빈 파일 검증: 최소 1개 소스 필요
+   - 지리적 예제 제공 (Tokyo, New York, Fukushima)
+
+4. **Nuclides Config 검증** (`loadNuclidesConfig()`, lines 1450-1548)
+   - 붕괴 상수: λ ≥ 0 (> 1.0 s⁻¹이면 경고)
+   - 침적 속도: vd ≥ 0 (> 1.0 m/s이면 경고)
+   - 물리적 맥락 제공: 반감기 관계식, 일반적인 핵종 예제 (Cs-137, I-131, Xe-133)
+   - 빈 파일 검증
+
+5. **EKI Settings 검증** (`loadEKISettings()`, lines 485-804)
+   - 수용체 수: > 0, 위치 행렬과 개수 일치 확인
+   - 수용체 위치: 각 lat ∈ [-90, 90], lon ∈ [-180, 180]
+   - 포착 반경: > 0 (> 1.0°이면 경고)
+   - 앙상블 크기: 10 ≤ n ≤ 10,000 (공분산 추정 신뢰성)
+   - 반복 횟수: ≥ 1 (> 100이면 경고)
+   - 노이즈 레벨: 0 ≤ σ ≤ 1.0
+   - 방출량 시계열: 빈 배열 금지, 모든 값 0 ≤ Q < 1e20 Bq
+   - 시간 간격: > 0
+
+**에러 메시지 형식**:
+```
+[INPUT ERROR] <문제 요약>
+
+  Problem:
+    <왜 문제인지 설명>
+    <물리적/통계적 맥락>
+
+  Required value:
+    <필수 조건 명시>
+
+  Recommended:
+    <권장 범위 또는 값>
+
+  Examples:
+    <실제 사용 예제>
+
+  Fix in: <파일명>
+```
+
+**색상 코딩**:
+- 에러 헤더: 빨간색 + 굵게 (`[INPUT ERROR]`)
+- 문제 설명: 노란색 (`Problem:`)
+- 요구사항: 청록색 (`Required value:`)
+- 권장사항: 녹색 (`Recommended:`)
+- 예제: 녹색 (`Examples:`)
+- 수정 위치: 청록색 (`Fix in:`)
+
+**검증 테스트**:
+- ✅ 잘못된 입력 테스트: `total_particles: 50` (< 100)
+  - 프로그램 즉시 종료
+  - 상세한 에러 메시지 출력
+  - 요구사항, 권장값, 수정 위치 모두 표시
+- ✅ 정상 입력 테스트: `total_particles: 10000`
+  - 모든 검증 통과
+  - 시뮬레이션 정상 실행 (3 EKI iterations 완료)
+  - 998,400 particles, 100 ensembles 정상 동작
+
+**검증 예제**:
+
+*Temporal Validation*:
+```cpp
+if (time_end <= 0.0f) {
+    std::cerr << Color::RED << Color::BOLD << "[INPUT ERROR] " << Color::RESET
+              << "Invalid time_end: " << time_end << " seconds" << std::endl;
+    std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+    std::cerr << "    Simulation duration must be positive." << std::endl;
+    std::cerr << "  " << Color::CYAN << "Required value:" << Color::RESET << std::endl;
+    std::cerr << "    time_end > 0 (in seconds)" << std::endl;
+    std::cerr << "  " << Color::GREEN << "Recommended range:" << Color::RESET << std::endl;
+    std::cerr << "    - Short test: 3600 (1 hour)" << std::endl;
+    std::cerr << "    - Medium: 21600 (6 hours)" << std::endl;
+    std::cerr << "    - Long: 86400 (24 hours)" << std::endl;
+    exit(1);
+}
+```
+
+*Geographic Validation*:
+```cpp
+if (src.lon < -180.0f || src.lon > 180.0f) {
+    std::cerr << Color::RED << Color::BOLD << "[INPUT ERROR] " << Color::RESET
+              << "Invalid longitude: " << src.lon << "° at line " << line_number << std::endl;
+    std::cerr << "  " << Color::CYAN << "Required range:" << Color::RESET << std::endl;
+    std::cerr << "    -180.0 <= longitude <= 180.0 (degrees)" << std::endl;
+    std::cerr << "  " << Color::GREEN << "Examples:" << Color::RESET << std::endl;
+    std::cerr << "    - Tokyo:      139.69°E" << std::endl;
+    std::cerr << "    - New York:   -74.01°E (or 285.99°W)" << std::endl;
+    std::cerr << "    - Fukushima:  141.00°E" << std::endl;
+    exit(1);
+}
+```
+
+*Ensemble Validation*:
+```cpp
+if (g_eki.ensemble_size < 10) {
+    std::cerr << Color::RED << Color::BOLD << "[INPUT ERROR] " << Color::RESET
+              << "Too few ensemble members: " << g_eki.ensemble_size << std::endl;
+    std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+    std::cerr << "    Ensemble Kalman methods require sufficient members to estimate" << std::endl;
+    std::cerr << "    covariance matrices. < 10 members produces unreliable results." << std::endl;
+    std::cerr << "  " << Color::CYAN << "Required value:" << Color::RESET << std::endl;
+    std::cerr << "    EKI_ENSEMBLE_SIZE >= 10" << std::endl;
+    std::cerr << "  " << Color::GREEN << "Recommended:" << Color::RESET << " At least 50 members" << std::endl;
+    exit(1);
+}
+```
+
+**통계**:
+- **총 검증 코드**: ~600 lines
+- **검증된 파라미터**:
+  - Simulation: 5개 (time_end, time_step, vtk_output_frequency, total_particles, 4 booleans)
+  - Physics: 4개 (physics model switches)
+  - Source: 3개 × N (lon, lat, height for each source)
+  - Nuclides: 2개 × N (decay constant, deposition velocity for each nuclide)
+  - EKI: 10개 이상 (receptors, capture radius, ensemble size, iterations, noise, emissions, etc.)
+- **에러 메시지**: 각 검증마다 5-10줄의 상세한 가이드 포함
+
+**영향받은 파일**:
+- `src/init/ldm_init_config.cu` - 5개 파서 함수에 검증 로직 추가 (~600 lines)
+
+**결과**:
+- ✅ 프로덕션 레벨 입력 검증
+- ✅ 세계 최고 수준의 에러 메시지 품질
+- ✅ 물리적/통계적 타당성 보장
+- ✅ 사용자 교육적 가이드 제공
+- ✅ 완전한 fail-fast 동작
+- ✅ 빌드 및 실행 검증 완료

@@ -482,6 +482,312 @@ void LDM::loadEKISettings() {
     
     fclose(ekiFile);
 
+    // ========== COMPREHENSIVE VALIDATION ==========
+
+    // ===== VALIDATION: NUM_RECEPTORS =====
+    if (g_eki.num_receptors <= 0) {
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "Invalid NUM_RECEPTORS: " << g_eki.num_receptors << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    At least one receptor must be defined for EKI mode." << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Required value:" << Color::RESET << std::endl;
+        std::cerr << "    NUM_RECEPTORS >= 1" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::GREEN << "Recommended:" << Color::RESET << " 3-10 receptors for good spatial coverage" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/eki_settings.txt" << std::endl;
+        std::cerr << std::endl;
+        exit(1);
+    }
+
+    if (g_eki.receptor_locations.size() != static_cast<size_t>(g_eki.num_receptors)) {
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "Receptor count mismatch" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    NUM_RECEPTORS=" << g_eki.num_receptors
+                  << " but " << g_eki.receptor_locations.size()
+                  << " receptor locations defined" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Solution:" << Color::RESET << std::endl;
+        std::cerr << "    Ensure RECEPTOR_LOCATIONS_MATRIX has exactly "
+                  << g_eki.num_receptors << " lines" << std::endl;
+        std::cerr << "    Format: latitude longitude (one per line)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/eki_settings.txt" << std::endl;
+        std::cerr << std::endl;
+        exit(1);
+    }
+
+    // ===== VALIDATION: Receptor locations =====
+    for (size_t i = 0; i < g_eki.receptor_locations.size(); i++) {
+        float lat = g_eki.receptor_locations[i].first;
+        float lon = g_eki.receptor_locations[i].second;
+
+        if (lat < -90.0f || lat > 90.0f) {
+            std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                      << Color::RESET << "Invalid receptor latitude: " << lat << "° (receptor "
+                      << (i+1) << ")" << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::CYAN << "Required range:" << Color::RESET << std::endl;
+            std::cerr << "    -90.0 <= latitude <= 90.0 (degrees)" << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET
+                      << " input/eki_settings.txt, RECEPTOR_LOCATIONS_MATRIX" << std::endl;
+            std::cerr << std::endl;
+            exit(1);
+        }
+
+        if (lon < -180.0f || lon > 180.0f) {
+            std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                      << Color::RESET << "Invalid receptor longitude: " << lon << "° (receptor "
+                      << (i+1) << ")" << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::CYAN << "Required range:" << Color::RESET << std::endl;
+            std::cerr << "    -180.0 <= longitude <= 180.0 (degrees)" << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET
+                      << " input/eki_settings.txt, RECEPTOR_LOCATIONS_MATRIX" << std::endl;
+            std::cerr << std::endl;
+            exit(1);
+        }
+    }
+
+    // ===== VALIDATION: RECEPTOR_CAPTURE_RADIUS =====
+    if (g_eki.receptor_capture_radius <= 0.0f) {
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "Invalid RECEPTOR_CAPTURE_RADIUS: "
+                  << g_eki.receptor_capture_radius << "°" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    Capture radius must be positive." << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Required value:" << Color::RESET << std::endl;
+        std::cerr << "    RECEPTOR_CAPTURE_RADIUS > 0.0 (degrees)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::GREEN << "Typical values:" << Color::RESET << std::endl;
+        std::cerr << "    - Fine resolution:   0.01° (~1 km)" << std::endl;
+        std::cerr << "    - Standard:          0.025° (~2.5 km)" << std::endl;
+        std::cerr << "    - Coarse:            0.05° (~5 km)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/eki_settings.txt" << std::endl;
+        std::cerr << std::endl;
+        exit(1);
+    }
+    if (g_eki.receptor_capture_radius > 1.0f) {
+        std::cerr << std::endl << Color::YELLOW << Color::BOLD << "[WARNING] "
+                  << Color::RESET << "Very large RECEPTOR_CAPTURE_RADIUS: "
+                  << g_eki.receptor_capture_radius << "° (~"
+                  << (g_eki.receptor_capture_radius * 111.0f) << " km)" << std::endl;
+        std::cerr << "  This may capture particles from large areas, reducing spatial resolution." << std::endl;
+        std::cerr << "  Consider using smaller radius (0.01-0.05°) for better accuracy." << std::endl;
+        std::cerr << std::endl;
+    }
+
+    // ===== VALIDATION: EKI_ENSEMBLE_SIZE =====
+    if (g_eki.ensemble_size <= 0) {
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "Invalid EKI_ENSEMBLE_SIZE: " << g_eki.ensemble_size << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    Ensemble size must be positive." << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Required value:" << Color::RESET << std::endl;
+        std::cerr << "    EKI_ENSEMBLE_SIZE >= 10 (minimum for Kalman filter)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::GREEN << "Recommended range:" << Color::RESET << std::endl;
+        std::cerr << "    - Quick test:  20-50 members" << std::endl;
+        std::cerr << "    - Standard:    50-100 members (good balance)" << std::endl;
+        std::cerr << "    - High quality: 100-500 members" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/eki_settings.txt" << std::endl;
+        std::cerr << std::endl;
+        exit(1);
+    }
+    if (g_eki.ensemble_size < 10) {
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "Too few ensemble members: " << g_eki.ensemble_size << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    Ensemble Kalman methods require sufficient members to estimate" << std::endl;
+        std::cerr << "    covariance matrices. < 10 members produces unreliable results." << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Required value:" << Color::RESET << std::endl;
+        std::cerr << "    EKI_ENSEMBLE_SIZE >= 10" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::GREEN << "Recommended:" << Color::RESET << " At least 50 members" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/eki_settings.txt" << std::endl;
+        std::cerr << std::endl;
+        exit(1);
+    }
+    if (g_eki.ensemble_size > 10000) {
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "Excessive ensemble size: " << g_eki.ensemble_size << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    This will cause:" << std::endl;
+        std::cerr << "    - Enormous memory consumption" << std::endl;
+        std::cerr << "    - Extremely long computation times" << std::endl;
+        std::cerr << "    - Diminishing returns in accuracy" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Required value:" << Color::RESET << std::endl;
+        std::cerr << "    EKI_ENSEMBLE_SIZE <= 10000" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::GREEN << "Practical maximum:" << Color::RESET << " 500 members" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/eki_settings.txt" << std::endl;
+        std::cerr << std::endl;
+        exit(1);
+    }
+
+    // ===== VALIDATION: EKI_ITERATION =====
+    if (g_eki.iteration <= 0) {
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "Invalid EKI_ITERATION: " << g_eki.iteration << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    At least one iteration is required." << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Required value:" << Color::RESET << std::endl;
+        std::cerr << "    EKI_ITERATION >= 1" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::GREEN << "Typical values:" << Color::RESET << std::endl;
+        std::cerr << "    - Quick test:  1-3 iterations" << std::endl;
+        std::cerr << "    - Standard:    3-5 iterations" << std::endl;
+        std::cerr << "    - Convergence: 5-10 iterations" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/eki_settings.txt" << std::endl;
+        std::cerr << std::endl;
+        exit(1);
+    }
+    if (g_eki.iteration > 100) {
+        std::cerr << std::endl << Color::YELLOW << Color::BOLD << "[WARNING] "
+                  << Color::RESET << "Very many iterations: " << g_eki.iteration << std::endl;
+        std::cerr << "  This will require extremely long computation time." << std::endl;
+        std::cerr << "  Consider using fewer iterations (e.g., 3-10) with convergence checking." << std::endl;
+        std::cerr << std::endl;
+    }
+
+    // ===== VALIDATION: EKI_NOISE_LEVEL =====
+    if (g_eki.noise_level < 0.0f) {
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "Invalid EKI_NOISE_LEVEL: " << g_eki.noise_level << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    Noise level cannot be negative." << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Required value:" << Color::RESET << std::endl;
+        std::cerr << "    EKI_NOISE_LEVEL >= 0.0 (fraction, e.g., 0.1 = 10%)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::GREEN << "Typical values:" << Color::RESET << std::endl;
+        std::cerr << "    - Low noise:     0.01-0.05 (1-5%)" << std::endl;
+        std::cerr << "    - Medium noise:  0.05-0.10 (5-10%)" << std::endl;
+        std::cerr << "    - High noise:    0.10-0.20 (10-20%)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/eki_settings.txt" << std::endl;
+        std::cerr << std::endl;
+        exit(1);
+    }
+    if (g_eki.noise_level > 1.0f) {
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "Excessive EKI_NOISE_LEVEL: " << g_eki.noise_level
+                  << " (" << (g_eki.noise_level * 100.0f) << "%)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    Noise level > 100% indicates measurement error exceeds signal." << std::endl;
+        std::cerr << "    This makes inverse problem ill-posed." << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Required value:" << Color::RESET << std::endl;
+        std::cerr << "    EKI_NOISE_LEVEL <= 1.0 (100%)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::GREEN << "Recommended:" << Color::RESET << " 0.05-0.15 (5-15%)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/eki_settings.txt" << std::endl;
+        std::cerr << std::endl;
+        exit(1);
+    }
+
+    // ===== VALIDATION: TRUE_EMISSION_SERIES =====
+    if (g_eki.true_emissions.empty()) {
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "No TRUE_EMISSION_SERIES data found" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    TRUE_EMISSION_SERIES must have at least one time step." << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Solution:" << Color::RESET << std::endl;
+        std::cerr << "    Define emission values in TRUE_EMISSION_SERIES section" << std::endl;
+        std::cerr << "    One value per line (in Bq)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::GREEN << "Example:" << Color::RESET << std::endl;
+        std::cerr << "    TRUE_EMISSION_SERIES=" << std::endl;
+        std::cerr << "    1.0e+12" << std::endl;
+        std::cerr << "    1.0e+12" << std::endl;
+        std::cerr << "    5.0e+11" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/eki_settings.txt" << std::endl;
+        std::cerr << std::endl;
+        exit(1);
+    }
+
+    // Check for negative or unrealistic emission values
+    for (size_t i = 0; i < g_eki.true_emissions.size(); i++) {
+        if (g_eki.true_emissions[i] < 0.0f) {
+            std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                      << Color::RESET << "Negative emission value at timestep " << (i+1)
+                      << ": " << g_eki.true_emissions[i] << " Bq" << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+            std::cerr << "    Emission rates cannot be negative." << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET
+                      << " input/eki_settings.txt, TRUE_EMISSION_SERIES" << std::endl;
+            std::cerr << std::endl;
+            exit(1);
+        }
+        if (g_eki.true_emissions[i] > 1.0e+20f) {
+            std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                      << Color::RESET << "Unrealistically large emission at timestep " << (i+1)
+                      << ": " << g_eki.true_emissions[i] << " Bq" << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+            std::cerr << "    Emission rate exceeds physically plausible values." << std::endl;
+            std::cerr << "    Check units and magnitude." << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::GREEN << "Reference:" << Color::RESET << std::endl;
+            std::cerr << "    Fukushima accident peak: ~1e+15 - 1e+17 Bq/hour" << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET
+                      << " input/eki_settings.txt, TRUE_EMISSION_SERIES" << std::endl;
+            std::cerr << std::endl;
+            exit(1);
+        }
+    }
+
+    // ===== VALIDATION: TIME_INTERVAL =====
+    if (g_eki.time_interval <= 0.0f) {
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "Invalid EKI_TIME_INTERVAL: " << g_eki.time_interval << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    Time interval must be positive." << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Required value:" << Color::RESET << std::endl;
+        std::cerr << "    EKI_TIME_INTERVAL > 0.0" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::GREEN << "Typical values:" << Color::RESET << std::endl;
+        std::cerr << "    - Fine resolution:   5-10 minutes" << std::endl;
+        std::cerr << "    - Standard:          15-30 minutes" << std::endl;
+        std::cerr << "    - Coarse:            1-3 hours" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/eki_settings.txt" << std::endl;
+        std::cerr << std::endl;
+        exit(1);
+    }
+
     std::cout << Color::GREEN << "" << Color::RESET << std::endl;
 
     // Print essential EKI settings (condensed)
@@ -650,29 +956,294 @@ void LDM::loadSimulationConfig() {
 
     // Load configuration file
     if (!g_config.loadConfig("input/simulation.conf")) {
-        std::cerr << Color::RED << "[ERROR] " << Color::RESET
-                  << "Failed to load input/simulation.conf" << std::endl;
-        std::cerr << "         Please ensure the file exists and is readable." << std::endl;
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[FATAL ERROR] "
+                  << Color::RESET << "Failed to load input/simulation.conf" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Possible causes:" << Color::RESET << std::endl;
+        std::cerr << "    - File does not exist in the input/ directory" << std::endl;
+        std::cerr << "    - Insufficient read permissions" << std::endl;
+        std::cerr << "    - File is corrupted or locked by another process" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Solution:" << Color::RESET << std::endl;
+        std::cerr << "    - Verify that 'input/simulation.conf' exists" << std::endl;
+        std::cerr << "    - Check file permissions: chmod 644 input/simulation.conf" << std::endl;
+        std::cerr << "    - Ensure you are running from the project root directory" << std::endl;
+        std::cerr << std::endl;
         exit(1);
     }
 
     // ========== TEMPORAL SETTINGS ==========
-    time_end = g_config.getFloat("time_end", 21600.0f);  // Default: 6 hours
-    dt = g_config.getFloat("time_step", 100.0f);         // Default: 100 seconds
-    freq_output = g_config.getInt("vtk_output_frequency", 1);  // Default: every timestep
+    time_end = g_config.getFloat("time_end", 21600.0f);
+    dt = g_config.getFloat("time_step", 100.0f);
+    freq_output = g_config.getInt("vtk_output_frequency", 1);
+
+    // ===== VALIDATION: time_end =====
+    if (time_end <= 0.0f) {
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "Invalid time_end: " << time_end << " seconds" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    Simulation duration must be positive." << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Required value:" << Color::RESET << std::endl;
+        std::cerr << "    time_end > 0 (in seconds)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::GREEN << "Recommended range:" << Color::RESET << std::endl;
+        std::cerr << "    - Short test: 3600 (1 hour)" << std::endl;
+        std::cerr << "    - Medium: 21600 (6 hours)" << std::endl;
+        std::cerr << "    - Long: 86400 (24 hours)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/simulation.conf" << std::endl;
+        std::cerr << std::endl;
+        exit(1);
+    }
+    if (time_end > 604800.0f) {  // 7 days
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "Excessively long simulation time: " << time_end << " seconds ("
+                  << (time_end / 86400.0f) << " days)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    Simulations longer than 7 days may be impractical due to:" << std::endl;
+        std::cerr << "    - Excessive computation time" << std::endl;
+        std::cerr << "    - Meteorological data availability" << std::endl;
+        std::cerr << "    - Accumulated numerical errors" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Required value:" << Color::RESET << std::endl;
+        std::cerr << "    time_end <= 604800 seconds (7 days)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/simulation.conf" << std::endl;
+        std::cerr << std::endl;
+        exit(1);
+    }
+
+    // ===== VALIDATION: time_step (dt) =====
+    if (dt <= 0.0f) {
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "Invalid time_step: " << dt << " seconds" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    Time step must be positive." << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Required value:" << Color::RESET << std::endl;
+        std::cerr << "    time_step > 0 (in seconds)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::GREEN << "Recommended range:" << Color::RESET << std::endl;
+        std::cerr << "    - High accuracy: 10-50 seconds" << std::endl;
+        std::cerr << "    - Balanced: 50-100 seconds (recommended)" << std::endl;
+        std::cerr << "    - Fast: 100-300 seconds (less accurate)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/simulation.conf" << std::endl;
+        std::cerr << std::endl;
+        exit(1);
+    }
+    if (dt > 3600.0f) {  // 1 hour
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "Time step too large: " << dt << " seconds" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    Large time steps cause numerical instability and poor accuracy." << std::endl;
+        std::cerr << "    Particles may skip over important meteorological features." << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Required value:" << Color::RESET << std::endl;
+        std::cerr << "    time_step <= 3600 seconds (1 hour)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::GREEN << "Recommended:" << Color::RESET << " 100 seconds for good balance" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/simulation.conf" << std::endl;
+        std::cerr << std::endl;
+        exit(1);
+    }
+    if (dt >= time_end) {
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "Time step must be smaller than simulation duration" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Current values:" << Color::RESET << std::endl;
+        std::cerr << "    time_step = " << dt << " seconds" << std::endl;
+        std::cerr << "    time_end  = " << time_end << " seconds" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Required:" << Color::RESET << std::endl;
+        std::cerr << "    time_step < time_end" << std::endl;
+        std::cerr << "    Suggested: time_step <= time_end / 10" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::GREEN << "Example fix:" << Color::RESET << std::endl;
+        std::cerr << "    If time_end = " << time_end << " seconds" << std::endl;
+        std::cerr << "    Then time_step = " << (time_end / 100.0f) << " seconds (or smaller)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/simulation.conf" << std::endl;
+        std::cerr << std::endl;
+        exit(1);
+    }
+
+    // ===== VALIDATION: vtk_output_frequency =====
+    if (freq_output <= 0) {
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "Invalid vtk_output_frequency: " << freq_output << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    Output frequency must be positive." << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Required value:" << Color::RESET << std::endl;
+        std::cerr << "    vtk_output_frequency >= 1" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::GREEN << "Recommended values:" << Color::RESET << std::endl;
+        std::cerr << "    - Every timestep: 1 (most detailed, large files)" << std::endl;
+        std::cerr << "    - Every 10th step: 10 (balanced)" << std::endl;
+        std::cerr << "    - Every 100th step: 100 (minimal output)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/simulation.conf" << std::endl;
+        std::cerr << std::endl;
+        exit(1);
+    }
+    if (freq_output > 1000) {
+        std::cerr << std::endl << Color::YELLOW << Color::BOLD << "[WARNING] "
+                  << Color::RESET << "Very sparse output frequency: " << freq_output << std::endl;
+        std::cerr << "  This may result in insufficient visualization data." << std::endl;
+        std::cerr << "  Consider using a smaller value (e.g., 10-100) for better analysis." << std::endl;
+        std::cerr << std::endl;
+    }
 
     // ========== PARTICLE SETTINGS ==========
-    nop = g_config.getInt("total_particles", 10000);     // Default: 10,000 particles
+    nop = g_config.getInt("total_particles", 10000);
+
+    // ===== VALIDATION: total_particles =====
+    if (nop <= 0) {
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "Invalid total_particles: " << nop << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    Particle count must be positive." << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Required value:" << Color::RESET << std::endl;
+        std::cerr << "    total_particles >= 100 (minimum for meaningful statistics)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::GREEN << "Recommended range:" << Color::RESET << std::endl;
+        std::cerr << "    - Quick test: 1,000 particles" << std::endl;
+        std::cerr << "    - Standard: 10,000 particles (good balance)" << std::endl;
+        std::cerr << "    - High quality: 100,000 particles" << std::endl;
+        std::cerr << "    - Production: 1,000,000 particles (requires GPU)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/simulation.conf" << std::endl;
+        std::cerr << std::endl;
+        exit(1);
+    }
+    if (nop < 100) {
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "Too few particles: " << nop << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    Fewer than 100 particles produces unreliable statistics." << std::endl;
+        std::cerr << "    Results will be dominated by random sampling noise." << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Required value:" << Color::RESET << std::endl;
+        std::cerr << "    total_particles >= 100" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::GREEN << "Recommended:" << Color::RESET << " At least 1,000 particles" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/simulation.conf" << std::endl;
+        std::cerr << std::endl;
+        exit(1);
+    }
+    if (nop > 100000000) {  // 100 million
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "Excessive particle count: " << nop << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    This many particles will cause:" << std::endl;
+        std::cerr << "    - GPU memory exhaustion" << std::endl;
+        std::cerr << "    - Extremely long computation times" << std::endl;
+        std::cerr << "    - Potential numerical overflow" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Required value:" << Color::RESET << std::endl;
+        std::cerr << "    total_particles <= 100,000,000" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::GREEN << "Typical maximum:" << Color::RESET << " 10,000,000 particles" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/simulation.conf" << std::endl;
+        std::cerr << std::endl;
+        exit(1);
+    }
 
     // ========== ATMOSPHERIC CONDITIONS ==========
-    isRural = g_config.getInt("rural_conditions", 1);    // Default: Rural (1)
-    isPG = g_config.getInt("use_pasquill_gifford", 1);   // Default: Pasquill-Gifford (1)
+    isRural = g_config.getInt("rural_conditions", 1);
+    isPG = g_config.getInt("use_pasquill_gifford", 1);
+
+    // ===== VALIDATION: rural_conditions =====
+    if (isRural != 0 && isRural != 1) {
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "Invalid rural_conditions: " << isRural << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    This is a boolean flag - must be 0 or 1." << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Valid values:" << Color::RESET << std::endl;
+        std::cerr << "    0 = Urban conditions (buildings reduce turbulence)" << std::endl;
+        std::cerr << "    1 = Rural conditions (open terrain, higher turbulence)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/simulation.conf" << std::endl;
+        std::cerr << std::endl;
+        exit(1);
+    }
+
+    // ===== VALIDATION: use_pasquill_gifford =====
+    if (isPG != 0 && isPG != 1) {
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "Invalid use_pasquill_gifford: " << isPG << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    This is a boolean flag - must be 0 or 1." << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Valid values:" << Color::RESET << std::endl;
+        std::cerr << "    0 = Briggs-McElroy-Pooler (more detailed parameterization)" << std::endl;
+        std::cerr << "    1 = Pasquill-Gifford (traditional, widely used)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::GREEN << "Recommended:" << Color::RESET << " 1 (Pasquill-Gifford)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/simulation.conf" << std::endl;
+        std::cerr << std::endl;
+        exit(1);
+    }
 
     // ========== METEOROLOGICAL DATA SOURCE ==========
-    isGFS = g_config.getInt("use_gfs_data", 1);          // Default: GFS (1)
+    isGFS = g_config.getInt("use_gfs_data", 1);
+
+    // ===== VALIDATION: use_gfs_data =====
+    if (isGFS != 0 && isGFS != 1) {
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "Invalid use_gfs_data: " << isGFS << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    This is a boolean flag - must be 0 or 1." << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Valid values:" << Color::RESET << std::endl;
+        std::cerr << "    0 = LDAPS (Korean regional model, higher resolution)" << std::endl;
+        std::cerr << "    1 = GFS (Global Forecast System, 0.5° resolution)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::GREEN << "Recommended:" << Color::RESET << " 1 (GFS) for global coverage" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/simulation.conf" << std::endl;
+        std::cerr << std::endl;
+        exit(1);
+    }
 
     // ========== TERMINAL OUTPUT ==========
-    g_sim.fixedScrollOutput = g_config.getInt("fixed_scroll_output", 1);  // Default: Enabled (1)
+    g_sim.fixedScrollOutput = g_config.getInt("fixed_scroll_output", 1);
+
+    // ===== VALIDATION: fixed_scroll_output =====
+    if (g_sim.fixedScrollOutput != 0 && g_sim.fixedScrollOutput != 1) {
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "Invalid fixed_scroll_output: " << g_sim.fixedScrollOutput << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    This is a boolean flag - must be 0 or 1." << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Valid values:" << Color::RESET << std::endl;
+        std::cerr << "    0 = Continuous scroll (full history visible)" << std::endl;
+        std::cerr << "    1 = Fixed-height (cleaner, stays within terminal)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/simulation.conf" << std::endl;
+        std::cerr << std::endl;
+        exit(1);
+    }
 
     std::cout << Color::GREEN << "done" << Color::RESET << std::endl;
 
@@ -723,8 +1294,17 @@ void LDM::loadPhysicsConfig() {
     // Load physics.conf using ConfigReader
     ConfigReader physics_config;
     if (!physics_config.loadConfig("input/physics.conf")) {
-        std::cerr << Color::RED << "[ERROR]" << Color::RESET
-                  << " Failed to load input/physics.conf" << std::endl;
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[FATAL ERROR] "
+                  << Color::RESET << "Failed to load input/physics.conf" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Possible causes:" << Color::RESET << std::endl;
+        std::cerr << "    - File does not exist in the input/ directory" << std::endl;
+        std::cerr << "    - Insufficient read permissions" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Solution:" << Color::RESET << std::endl;
+        std::cerr << "    - Verify that 'input/physics.conf' exists" << std::endl;
+        std::cerr << "    - Check file permissions: chmod 644 input/physics.conf" << std::endl;
+        std::cerr << std::endl;
         exit(1);
     }
 
@@ -733,6 +1313,86 @@ void LDM::loadPhysicsConfig() {
     g_drydep = physics_config.getInt("dry_deposition_model", 0);
     g_wetdep = physics_config.getInt("wet_deposition_model", 0);
     g_raddecay = physics_config.getInt("radioactive_decay_model", 1);
+
+    // ===== VALIDATION: turbulence_model =====
+    if (g_turb_switch != 0 && g_turb_switch != 1) {
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "Invalid turbulence_model: " << g_turb_switch << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    This is a boolean flag - must be 0 or 1." << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Valid values:" << Color::RESET << std::endl;
+        std::cerr << "    0 = Disabled (no turbulent diffusion)" << std::endl;
+        std::cerr << "    1 = Enabled (includes atmospheric turbulence)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::GREEN << "Note:" << Color::RESET
+                  << " Turbulence is crucial for realistic dispersion patterns." << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/physics.conf" << std::endl;
+        std::cerr << std::endl;
+        exit(1);
+    }
+
+    // ===== VALIDATION: dry_deposition_model =====
+    if (g_drydep != 0 && g_drydep != 1) {
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "Invalid dry_deposition_model: " << g_drydep << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    This is a boolean flag - must be 0 or 1." << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Valid values:" << Color::RESET << std::endl;
+        std::cerr << "    0 = Disabled (particles do not settle)" << std::endl;
+        std::cerr << "    1 = Enabled (gravitational settling and surface deposition)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::GREEN << "Note:" << Color::RESET
+                  << " Important for particulate matter and long-range transport." << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/physics.conf" << std::endl;
+        std::cerr << std::endl;
+        exit(1);
+    }
+
+    // ===== VALIDATION: wet_deposition_model =====
+    if (g_wetdep != 0 && g_wetdep != 1) {
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "Invalid wet_deposition_model: " << g_wetdep << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    This is a boolean flag - must be 0 or 1." << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Valid values:" << Color::RESET << std::endl;
+        std::cerr << "    0 = Disabled (no precipitation removal)" << std::endl;
+        std::cerr << "    1 = Enabled (removal by rain and snow)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::GREEN << "Note:" << Color::RESET
+                  << " Critical during precipitation events." << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/physics.conf" << std::endl;
+        std::cerr << std::endl;
+        exit(1);
+    }
+
+    // ===== VALIDATION: radioactive_decay_model =====
+    if (g_raddecay != 0 && g_raddecay != 1) {
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "Invalid radioactive_decay_model: " << g_raddecay << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    This is a boolean flag - must be 0 or 1." << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Valid values:" << Color::RESET << std::endl;
+        std::cerr << "    0 = Disabled (no radioactive decay)" << std::endl;
+        std::cerr << "    1 = Enabled (CRAM decay computation)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::GREEN << "Recommended:" << Color::RESET
+                  << " Keep ON (1) for radionuclide transport." << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/physics.conf" << std::endl;
+        std::cerr << std::endl;
+        exit(1);
+    }
 
     std::cout << Color::GREEN << "done" << Color::RESET << std::endl;
 
@@ -778,7 +1438,17 @@ void LDM::loadSourceConfig() {
     FILE* sourceFile = fopen(source_file_path.c_str(), "r");
 
     if (!sourceFile) {
-        std::cerr << Color::RED << "Failed to open " << source_file_path << Color::RESET << std::endl;
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[FATAL ERROR] "
+                  << Color::RESET << "Failed to open " << source_file_path << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Possible causes:" << Color::RESET << std::endl;
+        std::cerr << "    - File does not exist in the input/ directory" << std::endl;
+        std::cerr << "    - Insufficient read permissions" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Solution:" << Color::RESET << std::endl;
+        std::cerr << "    - Verify that 'input/source.conf' exists" << std::endl;
+        std::cerr << "    - Check file permissions: chmod 644 input/source.conf" << std::endl;
+        std::cerr << std::endl;
         exit(1);
     }
 
@@ -809,21 +1479,146 @@ void LDM::loadSourceConfig() {
         Source src;
         int parsed = sscanf(buffer, "%f %f %f", &src.lon, &src.lat, &src.height);
 
-        if (parsed == 3) {
-            sources.push_back(src);
-        } else {
-            std::cerr << Color::YELLOW << "\n[WARNING] " << Color::RESET
-                      << "Skipping invalid line " << line_number
-                      << " in source.conf: " << buffer;
+        if (parsed != 3) {
+            fclose(sourceFile);
+            std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                      << Color::RESET << "Invalid format at line " << line_number
+                      << " in source.conf" << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::YELLOW << "Invalid line:" << Color::RESET << std::endl;
+            std::cerr << "    " << buffer;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::CYAN << "Required format:" << Color::RESET << std::endl;
+            std::cerr << "    LONGITUDE LATITUDE HEIGHT" << std::endl;
+            std::cerr << "    (space-separated, degrees and meters)" << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::GREEN << "Example:" << Color::RESET << std::endl;
+            std::cerr << "    129.48 35.71 100.0" << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/source.conf" << std::endl;
+            std::cerr << std::endl;
+            exit(1);
         }
+
+        // ===== VALIDATION: Longitude =====
+        if (src.lon < -180.0f || src.lon > 180.0f) {
+            fclose(sourceFile);
+            std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                      << Color::RESET << "Invalid longitude: " << src.lon << "° at line "
+                      << line_number << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+            std::cerr << "    Longitude must be in valid geographic range." << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::CYAN << "Required range:" << Color::RESET << std::endl;
+            std::cerr << "    -180.0 <= longitude <= 180.0 (degrees)" << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::GREEN << "Examples:" << Color::RESET << std::endl;
+            std::cerr << "    - Tokyo:      139.69°E" << std::endl;
+            std::cerr << "    - New York:   -74.01°E (or 285.99°W)" << std::endl;
+            std::cerr << "    - Fukushima:  141.00°E" << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/source.conf, line "
+                      << line_number << std::endl;
+            std::cerr << std::endl;
+            exit(1);
+        }
+
+        // ===== VALIDATION: Latitude =====
+        if (src.lat < -90.0f || src.lat > 90.0f) {
+            fclose(sourceFile);
+            std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                      << Color::RESET << "Invalid latitude: " << src.lat << "° at line "
+                      << line_number << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+            std::cerr << "    Latitude must be in valid geographic range." << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::CYAN << "Required range:" << Color::RESET << std::endl;
+            std::cerr << "    -90.0 <= latitude <= 90.0 (degrees)" << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::GREEN << "Examples:" << Color::RESET << std::endl;
+            std::cerr << "    - Equator:    0.00°N" << std::endl;
+            std::cerr << "    - Tokyo:      35.69°N" << std::endl;
+            std::cerr << "    - Fukushima:  37.00°N" << std::endl;
+            std::cerr << "    - South Pole: -90.00°N" << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/source.conf, line "
+                      << line_number << std::endl;
+            std::cerr << std::endl;
+            exit(1);
+        }
+
+        // ===== VALIDATION: Height =====
+        if (src.height < 0.0f) {
+            fclose(sourceFile);
+            std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                      << Color::RESET << "Invalid height: " << src.height << " m at line "
+                      << line_number << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+            std::cerr << "    Release height cannot be negative (below ground level)." << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::CYAN << "Required range:" << Color::RESET << std::endl;
+            std::cerr << "    height >= 0.0 (meters above ground level)" << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::GREEN << "Typical values:" << Color::RESET << std::endl;
+            std::cerr << "    - Ground release:    0-10 m" << std::endl;
+            std::cerr << "    - Building release:  20-100 m" << std::endl;
+            std::cerr << "    - Stack release:     100-500 m" << std::endl;
+            std::cerr << "    - Elevated source:   500-3000 m" << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/source.conf, line "
+                      << line_number << std::endl;
+            std::cerr << std::endl;
+            exit(1);
+        }
+        if (src.height > 20000.0f) {
+            fclose(sourceFile);
+            std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                      << Color::RESET << "Excessive height: " << src.height << " m at line "
+                      << line_number << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+            std::cerr << "    Release height exceeds practical atmospheric boundary layer." << std::endl;
+            std::cerr << "    Heights above 20 km are typically not relevant for dispersion modeling." << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::CYAN << "Required range:" << Color::RESET << std::endl;
+            std::cerr << "    height <= 20000.0 meters (20 km)" << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::GREEN << "Reference:" << Color::RESET << std::endl;
+            std::cerr << "    - Troposphere top: ~12 km" << std::endl;
+            std::cerr << "    - Stratosphere begins: ~12-15 km" << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/source.conf, line "
+                      << line_number << std::endl;
+            std::cerr << std::endl;
+            exit(1);
+        }
+
+        sources.push_back(src);
     }
 
     fclose(sourceFile);
 
     // Validation: at least one source must be defined
     if (sources.empty()) {
-        std::cerr << Color::RED << "\n[ERROR] " << Color::RESET
-                  << "No valid sources found in source.conf" << std::endl;
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "No valid sources found in source.conf" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    At least one emission source must be defined." << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Solution:" << Color::RESET << std::endl;
+        std::cerr << "    Add at least one source line in the format:" << std::endl;
+        std::cerr << "    LONGITUDE LATITUDE HEIGHT" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::GREEN << "Example:" << Color::RESET << std::endl;
+        std::cerr << "    # Fukushima Daiichi Nuclear Power Plant" << std::endl;
+        std::cerr << "    141.0 37.0 20.0" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/source.conf" << std::endl;
+        std::cerr << std::endl;
         exit(1);
     }
 
@@ -959,9 +1754,89 @@ void LDM::loadNuclidesConfig() {
     g_num_nuclides = nuclide_count;
 
     if (nuclide_count == 0) {
-        std::cerr << std::endl << Color::RED << "[ERROR] " << Color::RESET
-                  << "No nuclides loaded from " << filename << std::endl;
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "No valid nuclides loaded from " << filename << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    Nuclide configuration file exists but contains no valid entries." << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Required format:" << Color::RESET << std::endl;
+        std::cerr << "    NUCLIDE_NAME DECAY_CONSTANT DEPOSITION_VELOCITY" << std::endl;
+        std::cerr << "    (space-separated)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::GREEN << "Example:" << Color::RESET << std::endl;
+        std::cerr << "    Cs137 7.30e-10 0.01" << std::endl;
+        std::cerr << "    I131  9.97e-07 0.02" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " " << filename << std::endl;
+        std::cerr << std::endl;
         exit(1);
+    }
+
+    // ===== VALIDATION: Check all decay constants =====
+    for (size_t i = 0; i < decayConstants.size(); i++) {
+        if (decayConstants[i] < 0.0f) {
+            std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                      << Color::RESET << "Negative decay constant for nuclide " << (i+1)
+                      << ": " << decayConstants[i] << " s⁻¹" << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+            std::cerr << "    Decay constants must be non-negative." << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::CYAN << "Physical meaning:" << Color::RESET << std::endl;
+            std::cerr << "    Decay constant λ relates to half-life: t₁/₂ = ln(2)/λ" << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::GREEN << "Typical ranges:" << Color::RESET << std::endl;
+            std::cerr << "    - Stable isotopes:  0.0 s⁻¹" << std::endl;
+            std::cerr << "    - Long-lived (Cs-137):  7.3e-10 s⁻¹ (t₁/₂ = 30 years)" << std::endl;
+            std::cerr << "    - Medium-lived (I-131): 9.97e-07 s⁻¹ (t₁/₂ = 8 days)" << std::endl;
+            std::cerr << "    - Short-lived (Xe-133): 1.52e-06 s⁻¹ (t₁/₂ = 5 days)" << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " " << filename << std::endl;
+            std::cerr << std::endl;
+            exit(1);
+        }
+        if (decayConstants[i] > 1.0f) {
+            std::cerr << std::endl << Color::YELLOW << Color::BOLD << "[WARNING] "
+                      << Color::RESET << "Very large decay constant for nuclide " << (i+1)
+                      << ": " << decayConstants[i] << " s⁻¹" << std::endl;
+            std::cerr << "  This corresponds to a half-life of " << (0.693147f / decayConstants[i])
+                      << " seconds." << std::endl;
+            std::cerr << "  Such short-lived nuclides may decay before significant transport occurs." << std::endl;
+            std::cerr << std::endl;
+        }
+    }
+
+    // ===== VALIDATION: Check all deposition velocities =====
+    for (size_t i = 0; i < drydepositionVelocity.size(); i++) {
+        if (drydepositionVelocity[i] < 0.0f) {
+            std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                      << Color::RESET << "Negative deposition velocity for nuclide " << (i+1)
+                      << ": " << drydepositionVelocity[i] << " m/s" << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+            std::cerr << "    Deposition velocities must be non-negative." << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::CYAN << "Physical meaning:" << Color::RESET << std::endl;
+            std::cerr << "    Rate at which particles settle to the ground surface." << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::GREEN << "Typical ranges:" << Color::RESET << std::endl;
+            std::cerr << "    - Gases:           0.001-0.01 m/s" << std::endl;
+            std::cerr << "    - Small particles: 0.001-0.01 m/s" << std::endl;
+            std::cerr << "    - Large particles: 0.01-0.1 m/s" << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " " << filename << std::endl;
+            std::cerr << std::endl;
+            exit(1);
+        }
+        if (drydepositionVelocity[i] > 1.0f) {
+            std::cerr << std::endl << Color::YELLOW << Color::BOLD << "[WARNING] "
+                      << Color::RESET << "Very large deposition velocity for nuclide " << (i+1)
+                      << ": " << drydepositionVelocity[i] << " m/s" << std::endl;
+            std::cerr << "  Typical deposition velocities are < 0.1 m/s." << std::endl;
+            std::cerr << "  Such high values suggest rapid gravitational settling (large particles)." << std::endl;
+            std::cerr << std::endl;
+        }
     }
 
     std::cout << Color::GREEN << "done" << Color::RESET << std::endl;

@@ -277,15 +277,205 @@ void LDM::cleanOutputDirectory() {
  * @author Juryong Park
  * @date 2025
  *****************************************************************************/
-void LDM::loadEKISettings() {
-    std::cout << "\n" << Color::CYAN << "[SYSTEM] " << Color::RESET
-              << "Loading EKI settings... " << std::flush;
+void LDM::loadReceptorConfig() {
+    // Try modern config file first, fallback to legacy (embedded in eki_settings.txt)
+    FILE* receptorFile = fopen("input/receptor.conf", "r");
+    const char* config_filename = "input/receptor.conf";
 
-    FILE* ekiFile = fopen("input/eki_settings.txt", "r");
-    if (!ekiFile) {
-        std::cerr << "Failed to open input/eki_settings.txt" << std::endl;
+    if (!receptorFile) {
+        receptorFile = fopen("input/eki_settings.txt", "r");
+        config_filename = "input/eki_settings.txt";
+    }
+
+    if (!receptorFile) {
+        std::cerr << "\n" << Color::RED << Color::BOLD << "[ERROR] " << Color::RESET
+                  << "Failed to open receptor configuration file" << std::endl;
+        std::cerr << "  Tried: input/receptor.conf, input/eki_settings.txt" << std::endl;
         exit(1);
     }
+
+    std::cout << "\n" << Color::CYAN << "[SYSTEM] " << Color::RESET
+              << "Loading receptor settings from " << Color::BOLD << config_filename << Color::RESET << "... " << std::flush;
+
+    char buffer[256];
+
+    // Initialize receptor configuration
+    g_eki.num_receptors = 0;
+    g_eki.receptor_locations.clear();
+
+    // State machine flag for multi-line section parsing
+    bool reading_receptor_locations = false;
+
+    while (fgets(buffer, sizeof(buffer), receptorFile)) {
+        // Skip comments and empty lines
+        if (buffer[0] == '#' || buffer[0] == '\n' || buffer[0] == '\r') {
+            continue;
+        }
+
+        // Normalize separator: convert ':' to '=' for uniform parsing
+        char* colon_pos = strchr(buffer, ':');
+        if (colon_pos && !strchr(buffer, '=')) {
+            *colon_pos = '=';
+        }
+
+        // Check for multi-line section header
+        if (strstr(buffer, "RECEPTOR_LOCATIONS=") || strstr(buffer, "RECEPTOR_LOCATIONS_MATRIX=")) {
+            reading_receptor_locations = true;
+            continue;
+        }
+
+        // Reset section flag when encountering key-value pairs
+        if (strchr(buffer, '=') != nullptr) {
+            reading_receptor_locations = false;
+        }
+
+        // Parse receptor location data
+        if (reading_receptor_locations) {
+            float lat, lon;
+            if (sscanf(buffer, "%f %f", &lat, &lon) == 2) {
+                g_eki.receptor_locations.push_back(std::make_pair(lat, lon));
+            }
+        }
+
+        // Parse key-value pairs
+        if (strchr(buffer, '=') != nullptr) {
+            if (strstr(buffer, "NUM_RECEPTORS=")) {
+                sscanf(buffer, "NUM_RECEPTORS=%d", &g_eki.num_receptors);
+            }
+            else if (strstr(buffer, "RECEPTOR_CAPTURE_RADIUS=")) {
+                sscanf(buffer, "RECEPTOR_CAPTURE_RADIUS=%f", &g_eki.receptor_capture_radius);
+            }
+        }
+    }
+
+    fclose(receptorFile);
+
+    // ========== COMPREHENSIVE VALIDATION ==========
+
+    // ===== VALIDATION: NUM_RECEPTORS =====
+    if (g_eki.num_receptors <= 0) {
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "Invalid NUM_RECEPTORS: " << g_eki.num_receptors << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    At least one receptor must be defined for EKI mode." << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Required value:" << Color::RESET << std::endl;
+        std::cerr << "    NUM_RECEPTORS >= 1" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::GREEN << "Recommended:" << Color::RESET << " 3-10 receptors for good spatial coverage" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " " << config_filename << std::endl;
+        std::cerr << std::endl;
+        exit(1);
+    }
+
+    if (g_eki.receptor_locations.size() != static_cast<size_t>(g_eki.num_receptors)) {
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "Receptor count mismatch" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    NUM_RECEPTORS=" << g_eki.num_receptors
+                  << " but " << g_eki.receptor_locations.size()
+                  << " receptor locations defined" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Solution:" << Color::RESET << std::endl;
+        std::cerr << "    Ensure RECEPTOR_LOCATIONS has exactly "
+                  << g_eki.num_receptors << " lines" << std::endl;
+        std::cerr << "    Format: latitude longitude (one per line)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " " << config_filename << std::endl;
+        std::cerr << std::endl;
+        exit(1);
+    }
+
+    // ===== VALIDATION: Receptor locations =====
+    for (size_t i = 0; i < g_eki.receptor_locations.size(); i++) {
+        float lat = g_eki.receptor_locations[i].first;
+        float lon = g_eki.receptor_locations[i].second;
+
+        if (lat < -90.0f || lat > 90.0f) {
+            std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                      << Color::RESET << "Invalid receptor latitude: " << lat << "° (receptor "
+                      << (i+1) << ")" << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::CYAN << "Required range:" << Color::RESET << std::endl;
+            std::cerr << "    -90.0 <= latitude <= 90.0 (degrees)" << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET
+                      << " " << config_filename << ", RECEPTOR_LOCATIONS" << std::endl;
+            std::cerr << std::endl;
+            exit(1);
+        }
+
+        if (lon < -180.0f || lon > 180.0f) {
+            std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                      << Color::RESET << "Invalid receptor longitude: " << lon << "° (receptor "
+                      << (i+1) << ")" << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::CYAN << "Required range:" << Color::RESET << std::endl;
+            std::cerr << "    -180.0 <= longitude <= 180.0 (degrees)" << std::endl;
+            std::cerr << std::endl;
+            std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET
+                      << " " << config_filename << ", RECEPTOR_LOCATIONS" << std::endl;
+            std::cerr << std::endl;
+            exit(1);
+        }
+    }
+
+    // ===== VALIDATION: RECEPTOR_CAPTURE_RADIUS =====
+    if (g_eki.receptor_capture_radius <= 0.0f) {
+        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
+                  << Color::RESET << "Invalid RECEPTOR_CAPTURE_RADIUS: "
+                  << g_eki.receptor_capture_radius << "°" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    Capture radius must be positive." << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Required value:" << Color::RESET << std::endl;
+        std::cerr << "    RECEPTOR_CAPTURE_RADIUS > 0.0 (degrees)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::GREEN << "Typical values:" << Color::RESET << std::endl;
+        std::cerr << "    - Fine resolution:   0.01° (~1 km)" << std::endl;
+        std::cerr << "    - Standard:          0.025° (~2.5 km)" << std::endl;
+        std::cerr << "    - Coarse:            0.05° (~5 km)" << std::endl;
+        std::cerr << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " " << config_filename << std::endl;
+        std::cerr << std::endl;
+        exit(1);
+    }
+    if (g_eki.receptor_capture_radius > 1.0f) {
+        std::cerr << std::endl << Color::YELLOW << Color::BOLD << "[WARNING] "
+                  << Color::RESET << "Very large RECEPTOR_CAPTURE_RADIUS: "
+                  << g_eki.receptor_capture_radius << "° (~"
+                  << (g_eki.receptor_capture_radius * 111.0f) << " km)" << std::endl;
+        std::cerr << "  This may capture particles from large areas, reducing spatial resolution." << std::endl;
+        std::cerr << "  Consider using smaller radius (0.01-0.05°) for better accuracy." << std::endl;
+        std::cerr << std::endl;
+    }
+
+    std::cout << "done\n";
+}
+
+void LDM::loadEKISettings() {
+    // Try modern config file first, fallback to legacy
+    FILE* ekiFile = fopen("input/eki.conf", "r");
+    const char* config_filename = "input/eki.conf";
+
+    if (!ekiFile) {
+        ekiFile = fopen("input/eki_settings.txt", "r");
+        config_filename = "input/eki_settings.txt";
+    }
+
+    if (!ekiFile) {
+        std::cerr << "\n" << Color::RED << Color::BOLD << "[ERROR] " << Color::RESET
+                  << "Failed to open EKI configuration file" << std::endl;
+        std::cerr << "  Tried: input/eki.conf, input/eki_settings.txt" << std::endl;
+        exit(1);
+    }
+
+    std::cout << "\n" << Color::CYAN << "[SYSTEM] " << Color::RESET
+              << "Loading EKI settings from " << Color::BOLD << config_filename << Color::RESET << "... " << std::flush;
 
     char buffer[256];
 
@@ -293,19 +483,16 @@ void LDM::loadEKISettings() {
     g_eki.mode = true;                          // EKI mode enabled
     g_eki.time_interval = 15.0f;                // 15 minute intervals
     g_eki.time_unit = "minutes";
-    g_eki.num_receptors = 0;
     g_eki.prior_mode = "constant";
     g_eki.prior_constant = 1.5e+8f;             // Default prior emission rate (Bq/s)
     g_eki.ensemble_size = 50;                   // Number of ensemble members
     g_eki.noise_level = 0.01f;                  // 1% observation noise
 
-    // Clear emission and receptor vectors
-    g_eki.receptor_locations.clear();
+    // Clear emission vectors
     g_eki.true_emissions.clear();
     g_eki.prior_emissions.clear();
 
     // State machine flags for multi-line section parsing
-    bool reading_receptor_matrix = false;
     bool reading_true_emissions = false;
     bool reading_prior_emissions = false;
     
@@ -315,23 +502,21 @@ void LDM::loadEKISettings() {
             continue;
         }
 
-        // State machine: Check for multi-line section headers
-        if (strstr(buffer, "RECEPTOR_LOCATIONS_MATRIX=")) {
-            reading_receptor_matrix = true;
-            reading_true_emissions = false;
-            reading_prior_emissions = false;
-            continue;
+        // Normalize separator: convert ':' to '=' for uniform parsing
+        // This allows both "KEY: value" (new format) and "KEY=value" (legacy format)
+        char* colon_pos = strchr(buffer, ':');
+        if (colon_pos && !strchr(buffer, '=')) {
+            *colon_pos = '=';
         }
 
+        // State machine: Check for multi-line section headers
         if (strstr(buffer, "TRUE_EMISSION_SERIES=")) {
-            reading_receptor_matrix = false;
             reading_true_emissions = true;
             reading_prior_emissions = false;
             continue;
         }
 
         if (strstr(buffer, "PRIOR_EMISSION_SERIES=")) {
-            reading_receptor_matrix = false;
             reading_true_emissions = false;
             reading_prior_emissions = true;
             continue;
@@ -339,19 +524,12 @@ void LDM::loadEKISettings() {
 
         // Reset section flags when encountering key-value pairs
         if (strchr(buffer, '=') != nullptr) {
-            reading_receptor_matrix = false;
             reading_true_emissions = false;
             reading_prior_emissions = false;
         }
 
         // Parse matrix data based on current state
-        if (reading_receptor_matrix) {
-            float lat, lon;
-            if (sscanf(buffer, "%f %f", &lat, &lon) == 2) {
-                g_eki.receptor_locations.push_back(std::make_pair(lat, lon));
-            }
-        }
-        else if (reading_true_emissions) {
+        if (reading_true_emissions) {
             float emission;
             if (sscanf(buffer, "%f", &emission) == 1) {
                 g_eki.true_emissions.push_back(emission);
@@ -375,14 +553,6 @@ void LDM::loadEKISettings() {
                 char unit[32];
                 sscanf(buffer, "EKI_TIME_UNIT=%s", unit);
                 g_eki.time_unit = std::string(unit);
-            }
-
-            // Receptor configuration
-            else if (strstr(buffer, "NUM_RECEPTORS=")) {
-                sscanf(buffer, "NUM_RECEPTORS=%d", &g_eki.num_receptors);
-            }
-            else if (strstr(buffer, "RECEPTOR_CAPTURE_RADIUS=")) {
-                sscanf(buffer, "RECEPTOR_CAPTURE_RADIUS=%f", &g_eki.receptor_capture_radius);
             }
 
             // Prior emission settings
@@ -431,45 +601,6 @@ void LDM::loadEKISettings() {
                 sscanf(buffer, "EKI_RENKF_LAMBDA=%f", &g_eki.renkf_lambda);
             }
 
-            // GPU acceleration settings
-            else if (strstr(buffer, "EKI_GPU_FORWARD=")) {
-                char opt[32];
-                sscanf(buffer, "EKI_GPU_FORWARD=%s", opt);
-                g_eki.gpu_forward = std::string(opt);
-            }
-            else if (strstr(buffer, "EKI_GPU_INVERSE=")) {
-                char opt[32];
-                sscanf(buffer, "EKI_GPU_INVERSE=%s", opt);
-                g_eki.gpu_inverse = std::string(opt);
-            }
-            else if (strstr(buffer, "EKI_NUM_GPU=")) {
-                sscanf(buffer, "EKI_NUM_GPU=%d", &g_eki.num_gpu);
-            }
-
-            // Additional EKI parameters
-            else if (strstr(buffer, "EKI_TIME_DAYS=")) {
-                sscanf(buffer, "EKI_TIME_DAYS=%f", &g_eki.time_days);
-            }
-            else if (strstr(buffer, "EKI_INVERSE_TIME_INTERVAL=")) {
-                sscanf(buffer, "EKI_INVERSE_TIME_INTERVAL=%f", &g_eki.inverse_time_interval);
-            }
-            else if (strstr(buffer, "EKI_RECEPTOR_ERROR=")) {
-                sscanf(buffer, "EKI_RECEPTOR_ERROR=%f", &g_eki.receptor_error);
-            }
-            else if (strstr(buffer, "EKI_RECEPTOR_MDA=")) {
-                sscanf(buffer, "EKI_RECEPTOR_MDA=%f", &g_eki.receptor_mda);
-            }
-
-            // Source configuration
-            else if (strstr(buffer, "EKI_SOURCE_LOCATION=")) {
-                char loc[32];
-                sscanf(buffer, "EKI_SOURCE_LOCATION=%s", loc);
-                g_eki.source_location = std::string(loc);
-            }
-            else if (strstr(buffer, "EKI_NUM_SOURCE=")) {
-                sscanf(buffer, "EKI_NUM_SOURCE=%d", &g_eki.num_source);
-            }
-
             // Debug mode
             else if (strstr(buffer, "MEMORY_DOCTOR_MODE=")) {
                 char mode[32];
@@ -483,108 +614,6 @@ void LDM::loadEKISettings() {
     fclose(ekiFile);
 
     // ========== COMPREHENSIVE VALIDATION ==========
-
-    // ===== VALIDATION: NUM_RECEPTORS =====
-    if (g_eki.num_receptors <= 0) {
-        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
-                  << Color::RESET << "Invalid NUM_RECEPTORS: " << g_eki.num_receptors << std::endl;
-        std::cerr << std::endl;
-        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
-        std::cerr << "    At least one receptor must be defined for EKI mode." << std::endl;
-        std::cerr << std::endl;
-        std::cerr << "  " << Color::CYAN << "Required value:" << Color::RESET << std::endl;
-        std::cerr << "    NUM_RECEPTORS >= 1" << std::endl;
-        std::cerr << std::endl;
-        std::cerr << "  " << Color::GREEN << "Recommended:" << Color::RESET << " 3-10 receptors for good spatial coverage" << std::endl;
-        std::cerr << std::endl;
-        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/eki_settings.txt" << std::endl;
-        std::cerr << std::endl;
-        exit(1);
-    }
-
-    if (g_eki.receptor_locations.size() != static_cast<size_t>(g_eki.num_receptors)) {
-        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
-                  << Color::RESET << "Receptor count mismatch" << std::endl;
-        std::cerr << std::endl;
-        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
-        std::cerr << "    NUM_RECEPTORS=" << g_eki.num_receptors
-                  << " but " << g_eki.receptor_locations.size()
-                  << " receptor locations defined" << std::endl;
-        std::cerr << std::endl;
-        std::cerr << "  " << Color::CYAN << "Solution:" << Color::RESET << std::endl;
-        std::cerr << "    Ensure RECEPTOR_LOCATIONS_MATRIX has exactly "
-                  << g_eki.num_receptors << " lines" << std::endl;
-        std::cerr << "    Format: latitude longitude (one per line)" << std::endl;
-        std::cerr << std::endl;
-        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/eki_settings.txt" << std::endl;
-        std::cerr << std::endl;
-        exit(1);
-    }
-
-    // ===== VALIDATION: Receptor locations =====
-    for (size_t i = 0; i < g_eki.receptor_locations.size(); i++) {
-        float lat = g_eki.receptor_locations[i].first;
-        float lon = g_eki.receptor_locations[i].second;
-
-        if (lat < -90.0f || lat > 90.0f) {
-            std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
-                      << Color::RESET << "Invalid receptor latitude: " << lat << "° (receptor "
-                      << (i+1) << ")" << std::endl;
-            std::cerr << std::endl;
-            std::cerr << "  " << Color::CYAN << "Required range:" << Color::RESET << std::endl;
-            std::cerr << "    -90.0 <= latitude <= 90.0 (degrees)" << std::endl;
-            std::cerr << std::endl;
-            std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET
-                      << " input/eki_settings.txt, RECEPTOR_LOCATIONS_MATRIX" << std::endl;
-            std::cerr << std::endl;
-            exit(1);
-        }
-
-        if (lon < -180.0f || lon > 180.0f) {
-            std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
-                      << Color::RESET << "Invalid receptor longitude: " << lon << "° (receptor "
-                      << (i+1) << ")" << std::endl;
-            std::cerr << std::endl;
-            std::cerr << "  " << Color::CYAN << "Required range:" << Color::RESET << std::endl;
-            std::cerr << "    -180.0 <= longitude <= 180.0 (degrees)" << std::endl;
-            std::cerr << std::endl;
-            std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET
-                      << " input/eki_settings.txt, RECEPTOR_LOCATIONS_MATRIX" << std::endl;
-            std::cerr << std::endl;
-            exit(1);
-        }
-    }
-
-    // ===== VALIDATION: RECEPTOR_CAPTURE_RADIUS =====
-    if (g_eki.receptor_capture_radius <= 0.0f) {
-        std::cerr << std::endl << Color::RED << Color::BOLD << "[INPUT ERROR] "
-                  << Color::RESET << "Invalid RECEPTOR_CAPTURE_RADIUS: "
-                  << g_eki.receptor_capture_radius << "°" << std::endl;
-        std::cerr << std::endl;
-        std::cerr << "  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
-        std::cerr << "    Capture radius must be positive." << std::endl;
-        std::cerr << std::endl;
-        std::cerr << "  " << Color::CYAN << "Required value:" << Color::RESET << std::endl;
-        std::cerr << "    RECEPTOR_CAPTURE_RADIUS > 0.0 (degrees)" << std::endl;
-        std::cerr << std::endl;
-        std::cerr << "  " << Color::GREEN << "Typical values:" << Color::RESET << std::endl;
-        std::cerr << "    - Fine resolution:   0.01° (~1 km)" << std::endl;
-        std::cerr << "    - Standard:          0.025° (~2.5 km)" << std::endl;
-        std::cerr << "    - Coarse:            0.05° (~5 km)" << std::endl;
-        std::cerr << std::endl;
-        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/eki_settings.txt" << std::endl;
-        std::cerr << std::endl;
-        exit(1);
-    }
-    if (g_eki.receptor_capture_radius > 1.0f) {
-        std::cerr << std::endl << Color::YELLOW << Color::BOLD << "[WARNING] "
-                  << Color::RESET << "Very large RECEPTOR_CAPTURE_RADIUS: "
-                  << g_eki.receptor_capture_radius << "° (~"
-                  << (g_eki.receptor_capture_radius * 111.0f) << " km)" << std::endl;
-        std::cerr << "  This may capture particles from large areas, reducing spatial resolution." << std::endl;
-        std::cerr << "  Consider using smaller radius (0.01-0.05°) for better accuracy." << std::endl;
-        std::cerr << std::endl;
-    }
 
     // ===== VALIDATION: EKI_ENSEMBLE_SIZE =====
     if (g_eki.ensemble_size <= 0) {
@@ -602,7 +631,7 @@ void LDM::loadEKISettings() {
         std::cerr << "    - Standard:    50-100 members (good balance)" << std::endl;
         std::cerr << "    - High quality: 100-500 members" << std::endl;
         std::cerr << std::endl;
-        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/eki_settings.txt" << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " " << config_filename << std::endl;
         std::cerr << std::endl;
         exit(1);
     }
@@ -619,7 +648,7 @@ void LDM::loadEKISettings() {
         std::cerr << std::endl;
         std::cerr << "  " << Color::GREEN << "Recommended:" << Color::RESET << " At least 50 members" << std::endl;
         std::cerr << std::endl;
-        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/eki_settings.txt" << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " " << config_filename << std::endl;
         std::cerr << std::endl;
         exit(1);
     }
@@ -638,7 +667,7 @@ void LDM::loadEKISettings() {
         std::cerr << std::endl;
         std::cerr << "  " << Color::GREEN << "Practical maximum:" << Color::RESET << " 500 members" << std::endl;
         std::cerr << std::endl;
-        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/eki_settings.txt" << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " " << config_filename << std::endl;
         std::cerr << std::endl;
         exit(1);
     }
@@ -659,7 +688,7 @@ void LDM::loadEKISettings() {
         std::cerr << "    - Standard:    3-5 iterations" << std::endl;
         std::cerr << "    - Convergence: 5-10 iterations" << std::endl;
         std::cerr << std::endl;
-        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/eki_settings.txt" << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " " << config_filename << std::endl;
         std::cerr << std::endl;
         exit(1);
     }
@@ -687,7 +716,7 @@ void LDM::loadEKISettings() {
         std::cerr << "    - Medium noise:  0.05-0.10 (5-10%)" << std::endl;
         std::cerr << "    - High noise:    0.10-0.20 (10-20%)" << std::endl;
         std::cerr << std::endl;
-        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/eki_settings.txt" << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " " << config_filename << std::endl;
         std::cerr << std::endl;
         exit(1);
     }
@@ -705,7 +734,7 @@ void LDM::loadEKISettings() {
         std::cerr << std::endl;
         std::cerr << "  " << Color::GREEN << "Recommended:" << Color::RESET << " 0.05-0.15 (5-15%)" << std::endl;
         std::cerr << std::endl;
-        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/eki_settings.txt" << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " " << config_filename << std::endl;
         std::cerr << std::endl;
         exit(1);
     }
@@ -728,7 +757,7 @@ void LDM::loadEKISettings() {
         std::cerr << "    1.0e+12" << std::endl;
         std::cerr << "    5.0e+11" << std::endl;
         std::cerr << std::endl;
-        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/eki_settings.txt" << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " " << config_filename << std::endl;
         std::cerr << std::endl;
         exit(1);
     }
@@ -744,7 +773,7 @@ void LDM::loadEKISettings() {
             std::cerr << "    Emission rates cannot be negative." << std::endl;
             std::cerr << std::endl;
             std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET
-                      << " input/eki_settings.txt, TRUE_EMISSION_SERIES" << std::endl;
+                      << " " << config_filename << ", TRUE_EMISSION_SERIES" << std::endl;
             std::cerr << std::endl;
             exit(1);
         }
@@ -761,7 +790,7 @@ void LDM::loadEKISettings() {
             std::cerr << "    Fukushima accident peak: ~1e+15 - 1e+17 Bq/hour" << std::endl;
             std::cerr << std::endl;
             std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET
-                      << " input/eki_settings.txt, TRUE_EMISSION_SERIES" << std::endl;
+                      << " " << config_filename << ", TRUE_EMISSION_SERIES" << std::endl;
             std::cerr << std::endl;
             exit(1);
         }
@@ -783,12 +812,12 @@ void LDM::loadEKISettings() {
         std::cerr << "    - Standard:          15-30 minutes" << std::endl;
         std::cerr << "    - Coarse:            1-3 hours" << std::endl;
         std::cerr << std::endl;
-        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " input/eki_settings.txt" << std::endl;
+        std::cerr << "  " << Color::CYAN << "Fix in:" << Color::RESET << " " << config_filename << std::endl;
         std::cerr << std::endl;
         exit(1);
     }
 
-    std::cout << Color::GREEN << "" << Color::RESET << std::endl;
+    std::cout << Color::GREEN << "done" << Color::RESET << std::endl;
 
     // Print essential EKI settings (condensed)
     std::cout << Color::BOLD << "EKI Configuration" << Color::RESET << std::endl;
@@ -1474,6 +1503,12 @@ void LDM::loadSourceConfig() {
             }
         }
         if (is_empty) continue;
+
+        // Stop parsing when encountering a section header (e.g., [GRID_CONFIG])
+        // Source locations are defined before any section headers
+        if (buffer[0] == '[') {
+            break;
+        }
 
         // Parse source location: LON LAT HEIGHT
         Source src;

@@ -13,7 +13,65 @@ from matplotlib.gridspec import GridSpec
 import re
 import os
 
-def load_eki_settings(settings_file='input/eki_settings.txt'):
+def load_receptor_settings(receptor_file='input/receptor.conf'):
+    """Load receptor configuration from receptor.conf"""
+    receptor_settings = {
+        'num_receptors': 3,
+        'receptor_locations': []
+    }
+
+    try:
+        with open(receptor_file, 'r') as f:
+            lines = f.readlines()
+            in_receptor_locations = False
+
+            for line in lines:
+                line = line.strip()
+
+                # Skip comments and empty lines
+                if not line or line.startswith('#'):
+                    continue
+
+                # Normalize separator: convert ':' to '=' for uniform parsing
+                if ':' in line and '=' not in line:
+                    line = line.replace(':', '=', 1)
+
+                # Parse number of receptors
+                if 'NUM_RECEPTORS' in line:
+                    receptor_settings['num_receptors'] = int(line.split('=')[1].strip())
+
+                # Parse receptor locations
+                elif 'RECEPTOR_LOCATIONS' in line:
+                    in_receptor_locations = True
+                    continue
+
+                if in_receptor_locations:
+                    # Stop if we hit another section
+                    if '=' in line and not line.startswith('#'):
+                        in_receptor_locations = False
+                    # Parse location line
+                    elif not line.startswith('#'):
+                        try:
+                            parts = line.split()
+                            if len(parts) >= 2:
+                                lat, lon = float(parts[0]), float(parts[1])
+                                receptor_settings['receptor_locations'].append((lat, lon))
+                        except:
+                            pass
+
+    except FileNotFoundError:
+        print(f"Warning: Could not load receptor settings from {receptor_file}: File not found")
+        print("Using default values")
+        return None
+    except Exception as e:
+        print(f"Warning: Could not load receptor settings from {receptor_file}: {e}")
+        print("Using default values")
+        return None
+
+    return receptor_settings
+
+
+def load_eki_settings(settings_file='input/eki.conf'):
     """Load EKI settings from configuration file"""
     settings = {
         'time_interval': 15.0,
@@ -22,10 +80,15 @@ def load_eki_settings(settings_file='input/eki_settings.txt'):
         'num_timesteps': None  # Will be calculated from TRUE_EMISSION_SERIES
     }
 
+    # Load receptor settings from separate file
+    receptor_settings = load_receptor_settings()
+    if receptor_settings:
+        settings['num_receptors'] = receptor_settings['num_receptors']
+        settings['receptor_locations'] = receptor_settings['receptor_locations']
+
     try:
         with open(settings_file, 'r') as f:
             lines = f.readlines()
-            in_receptor_matrix = False
 
             for i, line in enumerate(lines):
                 line = line.strip()
@@ -34,32 +97,13 @@ def load_eki_settings(settings_file='input/eki_settings.txt'):
                 if not line or line.startswith('#'):
                     continue
 
+                # Normalize separator: convert ':' to '=' for uniform parsing
+                if ':' in line and '=' not in line:
+                    line = line.replace(':', '=', 1)
+
                 # Parse time interval
                 if 'EKI_TIME_INTERVAL' in line:
-                    settings['time_interval'] = float(line.split('=')[1])
-
-                # Parse number of receptors
-                elif 'NUM_RECEPTORS' in line:
-                    settings['num_receptors'] = int(line.split('=')[1])
-
-                # Parse receptor locations
-                elif 'RECEPTOR_LOCATIONS_MATRIX' in line:
-                    in_receptor_matrix = True
-                    continue
-
-                if in_receptor_matrix:
-                    # Stop if we hit another section
-                    if '=' in line and not line.startswith('#'):
-                        in_receptor_matrix = False
-                    # Parse location line
-                    elif not line.startswith('#'):
-                        try:
-                            parts = line.split()
-                            if len(parts) >= 2:
-                                lat, lon = float(parts[0]), float(parts[1])
-                                settings['receptor_locations'].append((lat, lon))
-                        except:
-                            pass
+                    settings['time_interval'] = float(line.split('=')[1].strip())
 
         # Calculate number of timesteps from TRUE_EMISSION_SERIES length
         if settings['num_timesteps'] is None:
@@ -79,11 +123,11 @@ def load_eki_settings(settings_file='input/eki_settings.txt'):
                 except:
                     settings['num_timesteps'] = 24  # Safe default
 
-        print(f"[CONFIG] Loaded EKI settings:")
+        print(f"[CONFIG] Loaded EKI settings from eki.conf and receptor.conf:")
         print(f"  - Time interval: {settings['time_interval']} minutes")
         print(f"  - Num timesteps: {settings['num_timesteps']}")
-        print(f"  - Num receptors: {settings['num_receptors']}")
-        print(f"  - Receptor locations: {len(settings['receptor_locations'])} found")
+        print(f"  - Num receptors: {settings['num_receptors']} (from receptor.conf)")
+        print(f"  - Receptor locations: {len(settings['receptor_locations'])} found (from receptor.conf)")
 
     except Exception as e:
         print(f"Warning: Could not load settings from {settings_file}: {e}")
@@ -221,18 +265,20 @@ def load_eki_iterations():
     return iterations
 
 def load_true_emissions():
-    """Load true emission profile"""
+    """Load true emission profile from eki.conf"""
     emissions = []
     try:
-        with open('input/eki_settings.txt', 'r') as f:
+        with open('input/eki.conf', 'r') as f:
             in_section = False
             for line in f:
-                if 'TRUE_EMISSION_SERIES=' in line:
+                # Support both ':' and '=' separators
+                if 'TRUE_EMISSION_SERIES' in line and (':' in line or '=' in line):
                     in_section = True
                     continue
                 if in_section:
                     line = line.strip()
-                    if not line or '=' in line:
+                    # Stop at next section (key=value or key: value)
+                    if not line or '=' in line or ':' in line:
                         if emissions:
                             break
                     else:
@@ -324,7 +370,7 @@ def create_receptor_comparison():
     time_interval = eki_settings['time_interval']
 
     num_pages = (num_receptors + 2) // 3  # Ceiling division
-    print(f"\n📊 Generating plots for {num_receptors} receptors (from eki_settings.txt)")
+    print(f"\n📊 Generating plots for {num_receptors} receptors (from receptor.conf)")
     print(f"   Will create {num_pages} page(s) (3 receptors per page)")
 
     # Load single mode particle data - use dynamic receptor count from config

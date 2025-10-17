@@ -301,10 +301,11 @@ int main(int argc, char** argv) {
             << " WETDEP=" << g_wetdep
             << " RADDECAY=" << g_raddecay << "\n\n";
 
-    // Load EKI settings
-    std::cout << "Loading configuration from " << Color::BOLD << "input/eki_settings.txt" << Color::RESET << "..." << std::flush;
+    // Load receptor configuration (file detection and messaging handled in loadReceptorConfig())
+    ldm.loadReceptorConfig();
+
+    // Load EKI settings (file detection and messaging handled in loadEKISettings())
     ldm.loadEKISettings();
-    std::cout << " done\n";
 
     // Initialize Memory Doctor if enabled in settings
     extern MemoryDoctor g_memory_doctor;

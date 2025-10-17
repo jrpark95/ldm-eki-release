@@ -65,18 +65,26 @@ struct EKIConfigBasic {
 
 ////////////////////////////////////////////////////////////////////////////////
 /// @struct EKIConfigFull
-/// @brief  Complete EKI configuration (128 bytes exactly)
+/// @brief  Complete EKI configuration (80 bytes)
 /// @details Full configuration including all algorithm parameters, options,
 ///          and metadata needed by the Python EKI optimization process.
 ///
-/// Memory Layout:
-/// - Bytes 0-11   : Basic dimensions (12 bytes)
-/// - Bytes 12-55  : Algorithm parameters (44 bytes)
-/// - Bytes 56-119 : Option strings (64 bytes = 8 strings × 8 bytes)
-/// - Bytes 120-127: Memory Doctor mode (8 bytes)
+/// Memory Layout (v1.0 Release - Simplified):
+/// - Bytes 0-11  : Basic dimensions (12 bytes)
+/// - Bytes 12-31 : Algorithm parameters (20 bytes)
+/// - Bytes 32-71 : Option strings (40 bytes = 5 strings × 8 bytes)
+/// - Bytes 72-79 : Memory Doctor mode (8 bytes)
 ///
-/// @note Total size is exactly 128 bytes for efficient cache alignment
+/// Hardcoded values (not in IPC structure):
+/// - GPU acceleration: Always enabled (CUDA for forward, CuPy for inverse)
+/// - Source location: Always "Fixed" (known position)
+/// - Number of sources: Always 1 (single source only)
+///
+/// @note Total size is 80 bytes (reduced from 128 bytes)
 /// @note All strings are null-terminated with max length 7 chars + null
+/// @note Deprecated fields removed: time_days, inverse_time_interval,
+///       receptor_error, receptor_mda, num_source, num_gpu, gpu_forward,
+///       gpu_inverse, source_location
 ////////////////////////////////////////////////////////////////////////////////
 struct EKIConfigFull {
     // Basic dimensions (12 bytes)
@@ -84,33 +92,24 @@ struct EKIConfigFull {
     int32_t num_receptors;
     int32_t num_timesteps;
 
-    // Algorithm parameters (44 bytes)
+    // Algorithm parameters (20 bytes)
     int32_t iteration;               ///< Maximum EKI iterations (e.g., 10)
     float renkf_lambda;              ///< REnKF regularization parameter
     float noise_level;               ///< Observation noise level
-    float time_days;                 ///< Total simulation duration [days]
     float time_interval;             ///< EKI time interval (e.g., 15.0 minutes)
-    float inverse_time_interval;     ///< 1.0 / time_interval (precomputed)
-    float receptor_error;            ///< Receptor measurement error
-    float receptor_mda;              ///< Multiple Data Assimilation parameter
     float prior_constant;            ///< Prior emission constant (e.g., 1.5e+8 Bq)
-    int32_t num_source;              ///< Number of emission sources
-    int32_t num_gpu;                 ///< Number of available GPUs
 
-    // Option strings (64 bytes = 8 strings × 8 bytes)
+    // Option strings (40 bytes = 5 strings × 8 bytes)
     char perturb_option[8];    ///< Perturbation option: "On"/"Off"
     char adaptive_eki[8];      ///< Adaptive EKI: "On"/"Off"
     char localized_eki[8];     ///< Localized EKI: "On"/"Off"
     char regularization[8];    ///< Regularization: "On"/"Off"
-    char gpu_forward[8];       ///< GPU forward model: "On"/"Off"
-    char gpu_inverse[8];       ///< GPU inverse solver: "On"/"Off"
-    char source_location[8];   ///< Source location: "Fixed"/"Unknown"
     char time_unit[8];         ///< Time unit: "minutes"/"hours"
 
     // Memory Doctor Mode (8 bytes)
     char memory_doctor[8];     ///< Debug mode: "On"/"Off"
 
-    // Total: 12 + 44 + 64 + 8 = 128 bytes (no padding needed)
+    // Total: 12 + 20 + 40 + 8 = 80 bytes (no padding needed)
 };
 
 ////////////////////////////////////////////////////////////////////////////////

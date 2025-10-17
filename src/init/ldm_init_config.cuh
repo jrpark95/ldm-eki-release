@@ -73,37 +73,63 @@ void loadSimulationConfiguration();
 void cleanOutputDirectory();
 
 /**
- * @method LDM::loadEKISettings
- * @brief Load EKI-specific configuration from eki_settings.txt
+ * @method LDM::loadReceptorConfig
+ * @brief Load receptor configuration from receptor.conf
  *
- * @details Parses input/eki_settings.txt to configure Ensemble Kalman Inversion:
+ * @details Parses input/receptor.conf to configure measurement stations:
+ *          - Number of receptors
  *          - Receptor locations (lat/lon pairs)
+ *          - Receptor capture radius
+ *
+ * @pre input/receptor.conf must exist (or falls back to eki_settings.txt)
+ * @pre EKI mode must be enabled (g_eki.mode = true)
+ *
+ * @post g_eki.num_receptors set
+ * @post g_eki.receptor_locations populated with coordinates
+ * @post g_eki.receptor_capture_radius set
+ *
+ * @algorithm
+ *   1. Try to open receptor.conf, fallback to eki_settings.txt
+ *   2. Parse key-value pairs: NUM_RECEPTORS, RECEPTOR_CAPTURE_RADIUS
+ *   3. Parse RECEPTOR_LOCATIONS section (multi-line lat/lon pairs)
+ *   4. Validate all values (geographic ranges, counts)
+ *
+ * @throws std::exit(1) if no configuration file can be opened
+ * @throws std::exit(1) if validation fails
+ *
+ * @see input/receptor.conf for format specification
+ */
+void loadReceptorConfig();
+
+/**
+ * @method LDM::loadEKISettings
+ * @brief Load EKI-specific configuration from eki.conf
+ *
+ * @details Parses input/eki.conf to configure Ensemble Kalman Inversion:
  *          - True emission time series (for generating observations)
  *          - Prior emission time series (initial guess)
  *          - EKI algorithm parameters (ensemble size, iterations)
  *          - GPU acceleration settings
  *
- * @pre input/eki_settings.txt must exist
+ * @pre input/eki.conf must exist (or falls back to eki_settings.txt)
  * @pre EKI mode must be enabled (g_eki.mode = true)
+ * @pre loadReceptorConfig() should be called first
  *
  * @post g_eki struct populated with all EKI parameters
- * @post Receptor locations stored in g_eki.receptor_locations
  * @post Emission time series stored in g_eki.true_emissions / g_eki.prior_emissions
  *
  * @algorithm
  *   1. Initialize g_eki with default values
  *   2. Parse file line by line:
- *      - Section headers: RECEPTOR_LOCATIONS_MATRIX=, TRUE_EMISSION_SERIES=, etc.
+ *      - Section headers: TRUE_EMISSION_SERIES=, PRIOR_EMISSION_SERIES=
  *      - Key-value pairs: EKI_ENSEMBLE_SIZE=50, EKI_ITERATION=10, etc.
- *      - Matrix data: receptor coordinates, emission values
+ *      - Matrix data: emission values
  *   3. Handle state machine for multi-line sections
- *   4. Print essential EKI configuration summary
+ *   4. Validate all parameters
  *
  * @configuration_keys
  *   - EKI_TIME_INTERVAL: Time step for emission series (float)
  *   - EKI_TIME_UNIT: Time unit (string: "minutes", "hours")
- *   - NUM_RECEPTORS: Number of observation receptors (int)
- *   - RECEPTOR_CAPTURE_RADIUS: Radius for particle capture (degrees)
  *   - EKI_ENSEMBLE_SIZE: Number of ensemble members (int)
  *   - EKI_NOISE_LEVEL: Observation noise level (float)
  *   - EKI_ITERATION: Maximum EKI iterations (int)
@@ -113,13 +139,8 @@ void cleanOutputDirectory();
  *   - EKI_GPU_FORWARD/INVERSE: GPU acceleration (On/Off)
  *   - MEMORY_DOCTOR_MODE: Enable IPC debugging (On/Off)
  *
- * @output Console output includes:
- *   - Number of receptors and capture radius
- *   - Emission timesteps and time interval
- *   - Ensemble size
- *   - Memory Doctor mode status (if enabled)
- *
- * @throws std::exit(1) if eki_settings.txt cannot be opened
+ * @throws std::exit(1) if eki.conf cannot be opened
+ * @throws std::exit(1) if validation fails
  */
 void loadEKISettings();
 

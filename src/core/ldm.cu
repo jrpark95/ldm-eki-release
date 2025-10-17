@@ -277,18 +277,18 @@ void EKIMeteorologicalData::cleanup() {
 // ===========================================================================
 
 /******************************************************************************
- * @brief Load grid configuration from source.txt file
+ * @brief Load grid configuration from source configuration file
  *
- * Parses the [GRID_CONFIG] section in source.txt to extract parameters for
- * spatial discretization of the simulation domain. Used for grid-based output
- * and concentration field calculations.
+ * Parses the [GRID_CONFIG] section in source.conf (or legacy source.txt) to
+ * extract parameters for spatial discretization of the simulation domain.
+ * Used for grid-based output and concentration field calculations.
  *
- * Configuration Format (in source.txt):
+ * Configuration Format:
  * [GRID_CONFIG]
- * start_lat: 36.0
- * start_lon: 140.0
+ * start_lat: 35.0
+ * start_lon: 129.0
  * end_lat: 37.0
- * end_lon: 141.0
+ * end_lon: 131.0
  * lat_step: 0.5
  * lon_step: 0.5
  *
@@ -297,12 +297,17 @@ void EKIMeteorologicalData::cleanup() {
  * - Longitude range: [start_lon, end_lon] degrees
  * - Grid cells: (end_lat - start_lat) / lat_step × (end_lon - start_lon) / lon_step
  *
- * @return GridConfig structure with parsed values (or defaults if file not found)
- *         Default values: lat [36°, 37°], lon [140°, 141°], step 0.5°
+ * @return GridConfig structure with parsed values
  *
- * @note Returns default configuration if file cannot be opened
+ * @pre Configuration file must exist (source.conf or source.txt)
+ * @pre [GRID_CONFIG] section must be present with all required parameters
+ * @pre All values must be valid floats within geographic ranges
+ *
+ * @post Program exits with error if file not found or values invalid
+ *
+ * @note Fail-fast: Exits immediately on error (no default values)
  * @note Ignores lines starting with '#' (comments)
- * @note Prints warning if invalid values encountered but continues parsing
+ * @note Tries source.conf first, then source.txt for backward compatibility
  *
  * @see GridConfig struct definition in ldm.cuh
  *
@@ -312,12 +317,38 @@ void EKIMeteorologicalData::cleanup() {
 GridConfig loadGridConfig() {
     GridConfig config;
 
-    std::string source_file_path = g_config.getString("input_base_path", "./input/") + "source.txt";
-    std::ifstream file(source_file_path);
+    // Try modern config file first, fallback to legacy
+    std::string source_file_path;
+    std::ifstream file;
+
+    // Try source.conf first
+    source_file_path = g_config.getString("input_base_path", "./input/") + "source.conf";
+    file.open(source_file_path);
+
+    // Fallback to source.txt
+    if (!file.is_open()) {
+        source_file_path = g_config.getString("input_base_path", "./input/") + "source.txt";
+        file.open(source_file_path);
+    }
 
     if (!file.is_open()) {
-        std::cerr << "Warning: Could not open source.txt for grid config, using defaults" << std::endl;
-        return config;
+        std::cerr << "\n" << Color::RED << Color::BOLD << "[ERROR] " << Color::RESET
+                  << "Failed to open source configuration file for grid config" << std::endl;
+        std::cerr << "  Tried: input/source.conf, input/source.txt" << std::endl;
+        std::cerr << "\n  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+        std::cerr << "    Grid configuration requires source location file" << std::endl;
+        std::cerr << "\n  " << Color::CYAN << "Solution:" << Color::RESET << std::endl;
+        std::cerr << "    Ensure input/source.conf exists with [GRID_CONFIG] section" << std::endl;
+        std::cerr << "\n  " << Color::GREEN << "Example format:" << Color::RESET << std::endl;
+        std::cerr << "    [GRID_CONFIG]" << std::endl;
+        std::cerr << "    start_lat: 36.0" << std::endl;
+        std::cerr << "    start_lon: 140.0" << std::endl;
+        std::cerr << "    end_lat: 37.0" << std::endl;
+        std::cerr << "    end_lon: 141.0" << std::endl;
+        std::cerr << "    lat_step: 0.5" << std::endl;
+        std::cerr << "    lon_step: 0.5" << std::endl;
+        std::cerr << std::endl;
+        exit(1);
     }
 
     std::string line;
@@ -364,7 +395,19 @@ GridConfig loadGridConfig() {
                     else if (key == "lat_step") config.lat_step = std::stof(value);
                     else if (key == "lon_step") config.lon_step = std::stof(value);
                 } catch (const std::exception& e) {
-                    std::cerr << "Warning: Invalid value for " << key << ": " << value << std::endl;
+                    std::cerr << "\n" << Color::RED << Color::BOLD << "[INPUT ERROR] " << Color::RESET
+                              << "Invalid value for " << Color::BOLD << key << Color::RESET << ": " << value << std::endl;
+                    std::cerr << "\n  " << Color::YELLOW << "Problem:" << Color::RESET << std::endl;
+                    std::cerr << "    Cannot parse value as floating-point number" << std::endl;
+                    std::cerr << "    Exception: " << e.what() << std::endl;
+                    std::cerr << "\n  " << Color::CYAN << "Required format:" << Color::RESET << std::endl;
+                    std::cerr << "    " << key << ": <number>" << std::endl;
+                    std::cerr << "\n  " << Color::GREEN << "Examples:" << Color::RESET << std::endl;
+                    std::cerr << "    start_lat: 35.0" << std::endl;
+                    std::cerr << "    lon_step: 0.5" << std::endl;
+                    std::cerr << "\n  " << Color::CYAN << "Fix in:" << Color::RESET << " " << source_file_path << std::endl;
+                    std::cerr << std::endl;
+                    exit(1);
                 }
             }
         }

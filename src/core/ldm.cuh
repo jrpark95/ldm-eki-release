@@ -171,22 +171,11 @@ struct EKIConfig {
     std::string regularization = "On";
     float renkf_lambda = 1.0f;
 
-    // GPU configuration
-    std::string gpu_forward = "On";
-    std::string gpu_inverse = "On";
-    int num_gpu = 2;
-
-    // Simulation time parameters
-    float time_days = 0.25f;
-    float inverse_time_interval = 0.25f;
-
-    // Receptor parameters
-    float receptor_error = 0.0f;
-    float receptor_mda = 0.0f;
-
-    // Source parameters
-    std::string source_location = "Fixed";
-    int num_source = 1;
+    // ========== HARDCODED SYSTEM SETTINGS (v1.0 Release) ==========
+    // These values are fixed for production use and not configurable
+    // GPU acceleration: Always enabled (CuPy for Python, CUDA for C++)
+    // Source location: Always "Fixed" (known position, estimate emissions only)
+    // Number of sources: Always 1 (multi-source inversion not supported)
 
     // Memory Doctor Mode for IPC debugging
     bool memory_doctor_mode = false;
@@ -571,6 +560,7 @@ public:
     void initializeParticlesEKI();  // EKI mode particle initialization using true_emissions
     void initializeParticlesEKI_AllEnsembles(float* ensemble_states, int num_ensembles, int num_timesteps);  // EKI ensemble mode initialization
     void calculateSettlingVelocity();
+    void loadReceptorConfig();  // receptor.conf parser (separated from EKI settings)
     void loadEKISettings();
 
     // Modernized config parsers (Phase 1 - INPUT_MODERNIZATION_PLAN.md)

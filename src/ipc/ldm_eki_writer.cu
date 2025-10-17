@@ -99,14 +99,8 @@ bool EKIWriter::initialize(const ::EKIConfig& eki_config, int num_timesteps) {
     config->iteration = eki_config.iteration;
     config->renkf_lambda = eki_config.renkf_lambda;
     config->noise_level = eki_config.noise_level;
-    config->time_days = eki_config.time_days;
     config->time_interval = eki_config.time_interval;
-    config->inverse_time_interval = eki_config.inverse_time_interval;
-    config->receptor_error = eki_config.receptor_error;
-    config->receptor_mda = eki_config.receptor_mda;
     config->prior_constant = eki_config.prior_constant;
-    config->num_source = eki_config.num_source;
-    config->num_gpu = eki_config.num_gpu;
 
     // Option strings (safe copy with null termination)
     memset(config->perturb_option, 0, 8);
@@ -120,15 +114,6 @@ bool EKIWriter::initialize(const ::EKIConfig& eki_config, int num_timesteps) {
 
     memset(config->regularization, 0, 8);
     strncpy(config->regularization, eki_config.regularization.c_str(), 7);
-
-    memset(config->gpu_forward, 0, 8);
-    strncpy(config->gpu_forward, eki_config.gpu_forward.c_str(), 7);
-
-    memset(config->gpu_inverse, 0, 8);
-    strncpy(config->gpu_inverse, eki_config.gpu_inverse.c_str(), 7);
-
-    memset(config->source_location, 0, 8);
-    strncpy(config->source_location, eki_config.source_location.c_str(), 7);
 
     memset(config->time_unit, 0, 8);
     strncpy(config->time_unit, eki_config.time_unit.c_str(), 7);
@@ -177,9 +162,6 @@ bool EKIWriter::initialize(const ::EKIConfig& eki_config, int num_timesteps) {
     std::cout << "  Timesteps      : " << Color::BOLD << num_timesteps << Color::RESET << "\n";
     std::cout << "  Iteration      : " << eki_config.iteration << "\n";
     std::cout << "  Regularization : " << eki_config.regularization << "\n";
-    std::cout << "  GPU devices    : " << eki_config.num_gpu
-              << " (Forward: " << eki_config.gpu_forward
-              << ", Inverse: " << eki_config.gpu_inverse << ")\n";
     return true;
 }
 

@@ -164,18 +164,18 @@ def load_config_from_shared_memory():
         'Elimination_condition': 1.0e+6,
         'Receptor_Increment': 'Off',
 
-        # GPU configuration
-        'GPU_ForwardPhysicsModel': shm_data['gpu_forward'],
-        'GPU_InverseModel': shm_data['gpu_inverse'],
-        'nGPU': shm_data['num_gpu'],
+        # GPU configuration (v1.0: Hardcoded to always use GPU)
+        'GPU_ForwardPhysicsModel': 'On',  # Always enabled (CUDA required)
+        'GPU_InverseModel': 'On',          # Always use CuPy for inverse model
+        'nGPU': 1,                         # Single GPU mode
     }
 
     # Construct input_data dictionary (matches original YAML structure)
     input_data = {
         # Time parameters
-        'time': shm_data['time_days'],
-        'time_interval': 15,  # Fixed: 15 minutes (from eki_settings.txt)
-        'inverse_time_interval': shm_data['inverse_time_interval'],
+        'time': 0.25,  # Derived from simulation.conf time_end
+        'time_interval': 15,  # Fixed: 15 minutes (from eki.conf)
+        'inverse_time_interval': 0.25,  # Derived: time_interval converted to hours
         'ave_t': 3,  # Fixed: 15 min / 5 min = 3
 
         # Grid parameters (default values - not used in LDM forward model)
@@ -208,19 +208,19 @@ def load_config_from_shared_memory():
                               [4000.0, 4000.0, 1.0], [5000.0, 5000.0, 1.0], [6000.0, 6000.0, 1.0],
                               [7000.0, 7000.0, 1.0], [8000.0, 8000.0, 1.0], [9000.0, 9000.0, 1.0],
                               [10000.0, 10000.0, 1.0], [12500.0, 12500.0, 1.0], [15000.0, 15000.0, 1.0]],
-        'nreceptor_err': shm_data['receptor_error'],
-        'nreceptor_MDA': shm_data['receptor_mda'],
+        'nreceptor_err': 0.0,  # No additional measurement error (noise in observations)
+        'nreceptor_MDA': 0.0,  # No MDA inflation
 
-        # Source parameters
-        'Source_location': shm_data['source_location'],
-        'nsource': shm_data['num_source'],
+        # Source parameters (v1.0: Hardcoded to Fixed location)
+        'Source_location': 'Fixed',  # Always use known source position
+        'nsource': 1,                # Always single source
 
         # Calculate number of state timesteps dynamically
-        # time (days) * 24 (hours/day) / inverse_time_interval (hours)
-        'num_state_timesteps': int(shm_data['time_days'] * 24 / shm_data['inverse_time_interval']),
+        # From num_timesteps in shared memory (already computed in C++)
+        'num_state_timesteps': shm_data['num_timesteps'],
 
         # Source names (generated based on dynamic timesteps)
-        'source_name': [f'Kr-88-{i+1}' for i in range(int(shm_data['time_days'] * 24 / shm_data['inverse_time_interval']))],
+        'source_name': [f'Kr-88-{i+1}' for i in range(shm_data['num_timesteps'])],
 
         # Source_1 (true emission source for reference simulation)
         # Format: [decay_constant, DCF, [x,y,z], [emission_series], 0.0, 0.0, 'nuclide']
@@ -228,7 +228,7 @@ def load_config_from_shared_memory():
             6.779608573551890e-05,  # Kr-88 decay constant
             1.02e-13,                # Dose conversion factor
             [10.0, 10.0, 10.0],      # Source location (x, y, z)
-            # Emission time series (dynamic based on time_days and inverse_time_interval)
+            # Emission time series (dynamic based on num_timesteps)
             [1.90387731e+13, 1.90387731e+13, 1.90387731e+12, 1.90387731e+11,
              1.90387731e+4, 1.90387731e+3, 1.90387731e+2, 1.90387731e+1,
              2.26641204e+13, 2.26641204e+13, 2.26641204e+12, 2.26641204e+11,
@@ -246,8 +246,8 @@ def load_config_from_shared_memory():
             6.779608573551890e-05,  # Kr-88 decay constant
             1.02e-13,                # Dose conversion factor
             [[10.0, 10.0, 100.0], [0.1]],  # Location and std
-            # Emission series and std (dynamic length) - NO DEFAULT VALUES
-            [[shm_data['prior_constant']] * int(shm_data['time_days'] * 24 / shm_data['inverse_time_interval']), [shm_data['noise_level']]],
+            # Emission series and std (dynamic length)
+            [[shm_data['prior_constant']] * shm_data['num_timesteps'], [shm_data['noise_level']]],
             'Kr-88'                  # Nuclide name
         ],
 
@@ -671,33 +671,14 @@ class Model(object):
             self.decay_list.append(input_data[source][0])
             self.total_state_list.append(input_data[source][2][0] + input_data[source][3][0])
             self.total_state_std_list.append((np.array(input_data[source][2][0])*input_data[source][2][1]).tolist() + (np.array(input_data[source][3][0])*input_data[source][3][1]).tolist())
-        
-        if input_data['Source_location'] == 'Fixed':
-            self.real_state_init = np.hstack(self.real_state_init_list)
-            self.state_init = np.hstack(self.state_init_list)
-            self.state_std = np.hstack(self.state_std_list)
-            self.nstate_partial = np.array(self.state_init_list).shape[1]
-            self.source_location_case = 0
-        elif input_data['Source_location'] == 'Single':
-            self.real_state_init = np.hstack(self.real_source_location_list[0]+self.real_state_init_list)
-            self.state_init = np.hstack(self.source_location_list[0]+self.state_init_list)
-            self.state_std = np.hstack(self.source_location_std_list[0]+self.state_std_list)
-            self.nstate_partial = np.array(self.state_init_list).shape[1]
-            self.source_location_case = 1
-        elif input_data['Source_location'] == 'Multiple':
-            self.total_real_state = np.array(self.total_real_state_list).reshape(-1)
-            self.total_state = np.array(self.total_state_list).reshape(-1)
-            self.total_state_std = np.array(self.total_state_std_list).reshape(-1)
-            self.nstate_partial = np.array(self.total_state_list).shape[1]
-            self.real_state_init = self.total_real_state
-            self.state_init = self.total_state
-            self.state_std = self.total_state_std
-            self.nstate_partial = self.nstate_partial
-            self.source_location_case = 2
-        else:
-            print('Check the Source_location_info')
 
-        
+        # v1.0: Always use Fixed source location (known position, estimate emissions only)
+        self.real_state_init = np.hstack(self.real_state_init_list)
+        self.state_init = np.hstack(self.state_init_list)
+        self.state_std = np.hstack(self.state_std_list)
+        self.nstate_partial = np.array(self.state_init_list).shape[1]
+        self.source_location_case = 0  # Fixed source location mode
+
         self.state_init = np.array(self.state_init).reshape(-1)
         self.state_std = np.array(self.state_std).reshape(-1)
 

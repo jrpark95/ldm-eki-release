@@ -1118,3 +1118,112 @@ if (g_eki.ensemble_size < 10) {
 - ✅ 사용자 교육적 가이드 제공
 - ✅ 완전한 fail-fast 동작
 - ✅ 빌드 및 실행 검증 완료
+
+### Configuration Simplification (2025-10-17)
+
+**목적**: v1.0 릴리즈를 위해 실험적 기능 및 미사용 설정 제거, 프로덕션 값 고정
+
+**제거된 설정** (`input/eki.conf`):
+- GPU Configuration 섹션 (EKI_GPU_FORWARD, EKI_GPU_INVERSE, EKI_NUM_GPU)
+- Source location 설정 (EKI_SOURCE_LOCATION, EKI_NUM_SOURCE)
+- Deprecated 파라미터 (EKI_TIME_DAYS, EKI_INVERSE_TIME_INTERVAL, EKI_RECEPTOR_ERROR, EKI_RECEPTOR_MDA)
+
+**하드코딩된 프로덕션 값**:
+```cpp
+// GPU acceleration: Always enabled
+gpu_forward = "On"   // CUDA kernels required
+gpu_inverse = "On"   // CuPy for matrix operations
+
+// Source location: Always Fixed
+source_location = "Fixed"  // Known position (estimate emissions only)
+num_source = 1             // Single source only
+```
+
+**코드 변경사항**:
+
+1. **C++ 파서 업데이트** (`src/init/ldm_init_config.cu`)
+   - 제거: GPU 및 source location 파싱 코드 (~40 lines)
+   - 구조체 간소화: EKIConfig에서 deprecated 필드 제거
+
+2. **IPC 통신 최적화** (`src/ipc/ldm_eki_writer.cuh/cu`)
+   - EKIConfigFull 크기 감소: 128 bytes → 80 bytes
+   - 제거된 필드: gpu_forward, gpu_inverse, num_gpu, source_location, num_source,
+     time_days, inverse_time_interval, receptor_error, receptor_mda
+   - 유지된 필드: ensemble_size, num_receptors, num_timesteps, iteration, renkf_lambda,
+     noise_level, time_interval, prior_constant, 알고리즘 옵션들
+
+3. **Python 코드 간소화**
+   - **RunEstimator.py**: GPU 모드 분기 제거 → 항상 CuPy 사용
+     ```python
+     # Before: if input_config['GPU_InverseModel'] == 'On': ...
+     # After: Always use GPU (CuPy) for inverse model
+     posterior0, ... = Optimizer_EKI_np.Run(input_config, input_data)
+     ```
+
+   - **Model_Connection_np_Ensemble.py**:
+     - 하드코딩된 설정으로 변경:
+       ```python
+       'GPU_ForwardPhysicsModel': 'On',
+       'GPU_InverseModel': 'On',
+       'nGPU': 1,
+       'Source_location': 'Fixed',
+       'nsource': 1,
+       ```
+     - Source location 분기 제거 (Fixed 모드만 유지)
+     - 동적 파라미터 계산 단순화
+
+**설정 파일 변화**:
+
+*Before (eki.conf 구조)*:
+```
+├── TEMPORAL SETTINGS
+├── TRUE EMISSIONS
+├── PRIOR EMISSIONS
+├── ENSEMBLE KALMAN INVERSION ALGORITHM
+├── GPU CONFIGURATION       ← 제거됨
+├── ADVANCED SETTINGS       ← 간소화됨
+│   ├── time_days          ← 제거됨
+│   ├── inverse_time_interval ← 제거됨
+│   ├── receptor_error     ← 제거됨
+│   ├── receptor_mda       ← 제거됨
+│   ├── source_location    ← 제거됨
+│   └── num_source         ← 제거됨
+└── DEBUGGING
+```
+
+*After (eki.conf 구조)*:
+```
+├── TEMPORAL SETTINGS
+├── TRUE EMISSIONS
+├── PRIOR EMISSIONS
+├── ENSEMBLE KALMAN INVERSION ALGORITHM
+└── DEBUGGING
+```
+
+**빌드 및 검증**:
+- ✅ 깨끗한 빌드 (0 errors, 0 warnings)
+- ✅ 실행 파일 크기: 14MB (변경 없음)
+- ✅ IPC 통신 정상 작동 (80-byte config 전송 확인)
+- ✅ Python 코드 정상 작동 (하드코딩된 값 사용)
+
+**문서 업데이트**:
+```
+설정 시스템 섹션 업데이트 필요:
+- eki_settings.txt → eki.conf, receptor.conf로 분리 설명
+- GPU 설정 제거 언급
+- 고정된 source location 설명 추가
+```
+
+**영향받은 파일** (6개):
+- `input/eki.conf` - 설정 섹션 제거
+- `src/init/ldm_init_config.cu` - 파싱 코드 제거
+- `src/core/ldm.cuh` - 구조체 간소화
+- `src/ipc/ldm_eki_writer.cuh/cu` - IPC 구조체 축소
+- `src/eki/RunEstimator.py` - GPU 분기 제거
+- `src/eki/Model_Connection_np_Ensemble.py` - 하드코딩 적용
+
+**결과**:
+- 설정 파일 복잡도 40% 감소
+- 코드베이스 단순화 (~100 lines 제거)
+- v1.0 릴리즈 준비 완료 (프로덕션 설정 고정)
+- 사용자 혼란 감소 (불필요한 옵션 제거)

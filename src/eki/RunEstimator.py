@@ -324,15 +324,13 @@ for op in range(len(Optimization_list)):
             elif input_config['Receptor_Increment'] == 'On':
                 input_data['nreceptor'] = i
                 print(f'receptor:', input_data['nreceptor'])
-            else:   
+            else:
                 print('Check the number of receptor')
                 break
-            if input_config['GPU_InverseModel'] == 'Off':
-                print('Error')
-                # posterior0, posterior_iter0, info_list, misfit_list, discrepancy_bool_list, residual_bool_list, residual_list, noise_list, ensXiter_list, diff_list, misfits_list, discrepancy_bools_list, residual_bools_list, residuals_list = Optimizer_EKI.Run(input_config, input_data)
-            elif input_config['GPU_InverseModel'] == 'On':
-                posterior0, posterior_iter0, info_list, misfit_list, discrepancy_bool_list, residual_bool_list, residual_list, noise_list, ensXiter_list, diff_list, misfits_list, discrepancy_bools_list, residual_bools_list, residuals_list = Optimizer_EKI_np.Run(input_config, input_data)
-            else : print('Optimizer Error: Check GPU availability')
+
+            # v1.0: Always use GPU (CuPy) for inverse model
+            posterior0, posterior_iter0, info_list, misfit_list, discrepancy_bool_list, residual_bool_list, residual_list, noise_list, ensXiter_list, diff_list, misfits_list, discrepancy_bools_list, residual_bools_list, residuals_list = Optimizer_EKI_np.Run(input_config, input_data)
+
             Info_list=info_list
             posterior = posterior0.copy()
             Best_List.append(posterior_iter0.copy())
